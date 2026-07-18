@@ -1,6 +1,29 @@
 version: '3.8'
 
 services:
+  app:
+    build: .
+    container_name: shreelance-app
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=shreelance
+      - DB_PASSWORD=shreelance_password
+      - DB_NAME=shreelance
+      - DB_SSLMODE=disable
+      - VALKEY_ADDR=valkey:6379
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - GITHUB_REDIRECT_URL=${GITHUB_REDIRECT_URL}
+      - CSRF_AUTH_KEY=${CSRF_AUTH_KEY}
+    depends_on:
+      - db
+      - valkey
+    restart: unless-stopped
+
   db:
     image: postgres:16-alpine
     container_name: shreelance-db
