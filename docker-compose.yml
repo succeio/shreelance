@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: shreelance-db
+    environment:
+      POSTGRES_USER: shreelance
+      POSTGRES_PASSWORD: shreelance_password
+      POSTGRES_DB: shreelance
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # valkey:
+  #   image: valkey/valkey:7.2-alpine
+  #   container_name: shreelance-valkey
+  #   ports:
+  #     - "6379:6379"
+  #   restart: unless-stopped
+
+volumes:
+  pgdata:

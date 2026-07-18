@@ -1,0 +1,9 @@
+.env
+/ui/style.css
+/tmp
+/bin
+/dist
+air.log
+/server
+
+
