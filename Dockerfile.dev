@@ -1,8 +1,8 @@
-FROM golang:1.22-alpine
+FROM golang:1.26-alpine
 
 WORKDIR /app
 
-# Install development tools: air and tailwindcss
+# Install development tools: air
 RUN apk add --no-cache git curl && \
     go install github.com/air-verse/air@latest
 
