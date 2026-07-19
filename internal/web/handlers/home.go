@@ -144,22 +144,19 @@ func (h *HomeHandler) renderSpecialistsDashboard(specialists []models.User, sear
 					html.Class("flex-grow"),
 					html.H3(html.Class("text-lg font-bold text-gray-900"), g.Text(s.Username)),
 					html.P(html.Class("text-xs text-gray-500 mb-2"), g.Text(fmt.Sprintf("Опыт работы: %d %s", s.ExperienceYears, pluralizeYears(s.ExperienceYears)))),
-					g.If(s.Stack != "", html.Div(
-						html.Class("flex flex-wrap gap-1 mt-1"),
-						g.Group(func() []g.Node {
-							var tags []g.Node
-							for _, t := range strings.Split(s.Stack, ",") {
-								trimmed := strings.TrimSpace(t)
-								if trimmed != "" {
-									tags = append(tags, html.Span(
-										html.Class("inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100"),
-										g.Text(trimmed),
-									))
-								}
+				g.If(s.Stack != "", html.Div(
+					html.Class("flex flex-wrap gap-1 mt-1"),
+					g.Group(func() []g.Node {
+						var tags []g.Node
+						for _, t := range strings.Split(s.Stack, ",") {
+							trimmed := strings.TrimSpace(t)
+							if trimmed != "" {
+								tags = append(tags, renderTechBadge(trimmed))
 							}
-							return tags
-						}()),
-					)),
+						}
+						return tags
+					}()),
+				)),
 				),
 			),
 			html.Div(
@@ -240,21 +237,43 @@ func (h *HomeHandler) renderOrdersDashboard(orders []models.Order, search, minBu
 	var orderCards []g.Node
 	for _, o := range orders {
 		orderCards = append(orderCards, html.Div(
-			html.Class("bg-white p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow"),
+			html.Class("bg-white p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex flex-col justify-between space-y-3"),
 			html.Div(
-				html.Class("flex justify-between items-start mb-4"),
-				html.H3(
-					html.Class("text-xl font-bold text-gray-900"),
-					html.A(html.Href(fmt.Sprintf("/orders/%d", o.ID)), html.Class("hover:text-indigo-600"), g.Text(o.Title)),
+				html.Div(
+					html.Class("flex justify-between items-start mb-2"),
+					html.H3(
+						html.Class("text-xl font-bold text-gray-900 line-clamp-1"),
+						html.A(html.Href(fmt.Sprintf("/orders/%d", o.ID)), html.Class("hover:text-indigo-600"), g.Text(o.Title)),
+					),
+					html.Span(
+						html.Class("text-lg font-extrabold text-green-600 ml-2 whitespace-nowrap"),
+						g.Text(fmt.Sprintf("%.0f ₽", o.Budget)),
+					),
 				),
-				html.Span(
-					html.Class("text-lg font-extrabold text-green-600"),
-					g.Text(fmt.Sprintf("%.0f ₽", o.Budget)),
-				),
+				g.If(o.Category != "", html.Div(
+					html.Class("mb-3"),
+					html.Span(
+						html.Class("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-100"),
+						g.Text(o.Category),
+					),
+				)),
+				html.P(html.Class("text-gray-600 mb-3 line-clamp-3 text-sm leading-relaxed"), g.Text(o.Description)),
+				g.If(o.RequiredTech != "", html.Div(
+					html.Class("flex flex-wrap gap-1 mb-2"),
+					g.Group(func() []g.Node {
+						var tags []g.Node
+						for _, t := range strings.Split(o.RequiredTech, ",") {
+							trimmed := strings.TrimSpace(t)
+							if trimmed != "" {
+								tags = append(tags, renderTechBadge(trimmed))
+							}
+						}
+						return tags
+					}()),
+				)),
 			),
-			html.P(html.Class("text-gray-600 mb-4 line-clamp-3 text-sm"), g.Text(o.Description)),
 			html.Div(
-				html.Class("flex justify-between items-center text-xs text-gray-400"),
+				html.Class("flex justify-between items-center text-xs text-gray-400 border-t border-gray-100 pt-3"),
 				html.Span(g.Text("Заказчик: "+o.Customer.Username)),
 				html.Span(g.Text(o.CreatedAt.Format("02.01.2006 15:04"))),
 			),

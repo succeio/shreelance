@@ -29,7 +29,9 @@ type Order struct {
 	Title        string         `gorm:"size:255;not null" json:"title"`
 	Description  string         `gorm:"type:text;not null" json:"description"`
 	Budget       float64        `gorm:"type:decimal(10,2);not null" json:"budget"`
-	Status       string         `gorm:"size:50;default:'open';not null" json:"status"` // open, in_progress, completed, cancelled
+	Category     string         `gorm:"size:100;default:'';not null" json:"category"`       // e.g. frontend, backend, fullstack, devops, ML, etc.
+	RequiredTech string         `gorm:"type:text;default:'';not null" json:"required_tech"` // e.g. "Go, React, Docker"
+	Status       string         `gorm:"size:50;default:'open';not null" json:"status"`      // open, in_progress, completed, cancelled
 	CustomerID   uint           `gorm:"not null" json:"customer_id"`
 	Customer     User           `gorm:"foreignKey:CustomerID" json:"customer,omitempty"`
 	FreelancerID *uint          `json:"freelancer_id,omitempty"`

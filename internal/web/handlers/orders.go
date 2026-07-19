@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/alexedwards/scs/v2"
@@ -134,12 +135,21 @@ func (h *OrdersHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	budget, _ := strconv.ParseFloat(r.FormValue("budget"), 64)
 
+	category := r.FormValue("category")
+	if category == "other" || category == "" {
+		category = r.FormValue("category_custom")
+	}
+
+	requiredTech := r.FormValue("required_tech")
+
 	order := models.Order{
-		Title:       r.FormValue("title"),
-		Description: r.FormValue("description"),
-		Budget:      budget,
-		CustomerID:  user.ID,
-		Status:      "open",
+		Title:        r.FormValue("title"),
+		Description:  r.FormValue("description"),
+		Budget:       budget,
+		Category:     category,
+		RequiredTech: requiredTech,
+		CustomerID:   user.ID,
+		Status:       "open",
 	}
 
 	if err := h.DB.Create(&order).Error; err != nil {
@@ -497,21 +507,43 @@ func (h *OrdersHandler) renderOrdersList(orders []models.Order, user *models.Use
 	var orderCards []g.Node
 	for _, o := range orders {
 		orderCards = append(orderCards, html.Div(
-			html.Class("bg-white p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow"),
+			html.Class("bg-white p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex flex-col justify-between space-y-3"),
 			html.Div(
-				html.Class("flex justify-between items-start mb-4"),
-				html.H3(
-					html.Class("text-xl font-bold text-gray-900"),
-					html.A(html.Href(fmt.Sprintf("/orders/%d", o.ID)), html.Class("hover:text-indigo-600"), g.Text(o.Title)),
+				html.Div(
+					html.Class("flex justify-between items-start mb-2"),
+					html.H3(
+						html.Class("text-xl font-bold text-gray-900 line-clamp-1"),
+						html.A(html.Href(fmt.Sprintf("/orders/%d", o.ID)), html.Class("hover:text-indigo-600"), g.Text(o.Title)),
+					),
+					html.Span(
+						html.Class("text-lg font-extrabold text-green-600 ml-2 whitespace-nowrap"),
+						g.Text(fmt.Sprintf("%.0f ₽", o.Budget)),
+					),
 				),
-				html.Span(
-					html.Class("text-lg font-extrabold text-green-600"),
-					g.Text(fmt.Sprintf("%.0f ₽", o.Budget)),
-				),
+				g.If(o.Category != "", html.Div(
+					html.Class("mb-3"),
+					html.Span(
+						html.Class("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-100"),
+						g.Text(o.Category),
+					),
+				)),
+				html.P(html.Class("text-gray-600 mb-3 line-clamp-3 text-sm leading-relaxed"), g.Text(o.Description)),
+				g.If(o.RequiredTech != "", html.Div(
+					html.Class("flex flex-wrap gap-1 mb-2"),
+					g.Group(func() []g.Node {
+						var tags []g.Node
+						for _, t := range strings.Split(o.RequiredTech, ",") {
+							trimmed := strings.TrimSpace(t)
+							if trimmed != "" {
+								tags = append(tags, renderTechBadge(trimmed))
+							}
+						}
+						return tags
+					}()),
+				)),
 			),
-			html.P(html.Class("text-gray-600 mb-4 line-clamp-3 text-sm"), g.Text(o.Description)),
 			html.Div(
-				html.Class("flex justify-between items-center text-xs text-gray-400"),
+				html.Class("flex justify-between items-center text-xs text-gray-400 border-t border-gray-100 pt-3"),
 				html.Span(g.Text("Заказчик: "+o.Customer.Username)),
 				html.Span(g.Text(o.CreatedAt.Format("02.01.2006 15:04"))),
 			),
@@ -586,32 +618,197 @@ func (h *OrdersHandler) renderOrdersList(orders []models.Order, user *models.Use
 }
 
 func (h *OrdersHandler) renderCreateForm(csrfToken string) g.Node {
+	presetTechs := []string{"Go", "Python", "TypeScript", "JavaScript", "Rust", "React", "Vue.js", "Docker", "Kubernetes", "PostgreSQL", "Redis", "TailwindCSS", "HTMX", "GitOps", "ML"}
+
 	return html.Div(
-		html.Class("max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md"),
+		html.Class("max-w-2xl mx-auto bg-white p-8 rounded-2xl shadow-md border border-gray-100"),
 		html.H1(html.Class("text-2xl font-bold mb-6 text-gray-900"), g.Text("Создать новый заказ")),
 		html.Form(
 			html.Action("/orders"),
 			html.Method("POST"),
-			html.Class("space-y-4"),
+			html.Class("space-y-6"),
+			g.Attr("x-data", `{
+				category: 'Фронтенд',
+				customCategory: '',
+				selectedTechs: [],
+				customTechInput: '',
+				toggleTech(tech) {
+					if (this.selectedTechs.includes(tech)) {
+						this.selectedTechs = this.selectedTechs.filter(t => t !== tech);
+					} else {
+						this.selectedTechs.push(tech);
+					}
+				},
+				addCustomTech() {
+					let val = this.customTechInput.trim();
+					if (val && !this.selectedTechs.includes(val)) {
+						this.selectedTechs.push(val);
+						this.customTechInput = '';
+					}
+				},
+				removeTech(tech) {
+					this.selectedTechs = this.selectedTechs.filter(t => t !== tech);
+				},
+				get combinedTechs() {
+					return this.selectedTechs.join(', ');
+				}
+			}`),
 			html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
+			html.Input(html.Type("hidden"), html.Name("required_tech"), g.Attr(":value", "combinedTechs")),
+			
+			// Title
 			html.Div(
 				html.Label(html.Class("block text-sm font-semibold text-gray-700 mb-1"), g.Text("Название задания")),
-				html.Input(html.Type("text"), html.Name("title"), html.Required(), html.Class("w-full border border-gray-300 rounded px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500")),
+				html.Input(html.Type("text"), html.Name("title"), html.Required(), html.Placeholder("Например: Разработка REST API на Go"), html.Class("w-full border border-gray-300 rounded-lg px-3.5 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm")),
 			),
+
+			// Category Selection (Interactive Pill Buttons)
+			html.Div(
+				html.Label(html.Class("block text-sm font-semibold text-gray-700 mb-2"), g.Text("Область / Категория")),
+				html.Input(html.Type("hidden"), html.Name("category"), g.Attr(":value", "category === 'Другое' ? customCategory : category")),
+				html.Div(
+					html.Class("flex flex-wrap gap-2 mb-2"),
+					g.Group(func() []g.Node {
+						cats := []string{"Фронтенд", "Бэкенд", "Фулстак", "GitOps", "DevOps", "Machine Learning", "Другое"}
+						var nodes []g.Node
+						for _, c := range cats {
+							nodes = append(nodes, html.Button(
+								html.Type("button"),
+								g.Attr("@click", fmt.Sprintf("category = '%s'", c)),
+								g.Attr(":class", fmt.Sprintf("category === '%s' ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'", c)),
+								html.Class("px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer"),
+								g.Text(c),
+							))
+						}
+						return nodes
+					}()),
+				),
+				html.Div(
+					g.Attr("x-show", "category === 'Другое'"),
+					html.Input(
+						html.Type("text"),
+						g.Attr("x-model", "customCategory"),
+						html.Placeholder("Укажите свою область (например: QA, Blockchain)"),
+						html.Class("w-full border border-gray-300 rounded-lg px-3.5 py-2 focus:ring-2 focus:ring-indigo-500 text-sm mt-2"),
+					),
+				),
+			),
+
+			// Tech Stack Selection (Interactive Preset Chips + Custom Addition)
+			html.Div(
+				html.Label(html.Class("block text-sm font-semibold text-gray-700 mb-2"), g.Text("Необходимые языки и технологии")),
+				
+				// Selected technologies preview
+				html.Div(
+					g.Attr("x-show", "selectedTechs.length > 0"),
+					html.Class("mb-3 flex flex-wrap gap-1.5 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100"),
+					html.Template(
+						g.Attr("x-for", "tech in selectedTechs"),
+						g.Attr(":key", "tech"),
+						html.Span(
+							html.Class("inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-600 text-white shadow-sm"),
+							html.Span(g.Attr("x-text", "tech")),
+							html.Button(
+								html.Type("button"),
+								g.Attr("@click", "removeTech(tech)"),
+								html.Class("hover:text-red-200 font-bold ml-1 cursor-pointer"),
+								g.Text("×"),
+							),
+						),
+					),
+				),
+
+				// Preset chips
+				html.Div(
+					html.Class("flex flex-wrap gap-1.5 mb-3"),
+					g.Group(func() []g.Node {
+						var nodes []g.Node
+						for _, t := range presetTechs {
+							nodes = append(nodes, html.Button(
+								html.Type("button"),
+								g.Attr("@click", fmt.Sprintf("toggleTech('%s')", t)),
+								g.Attr(":class", fmt.Sprintf("selectedTechs.includes('%s') ? 'opacity-40 ring-2 ring-indigo-500 scale-95' : 'hover:scale-105'", t)),
+								html.Class("transition-transform cursor-pointer"),
+								renderTechBadge(t),
+							))
+						}
+						return nodes
+					}()),
+				),
+
+				// Custom tech input field
+				html.Div(
+					html.Class("flex space-x-2"),
+					html.Input(
+						html.Type("text"),
+						g.Attr("x-model", "customTechInput"),
+						g.Attr("@keydown.enter.prevent", "addCustomTech()"),
+						html.Placeholder("Добавить свою технологию..."),
+						html.Class("flex-grow border border-gray-300 rounded-lg px-3.5 py-2 text-sm focus:ring-2 focus:ring-indigo-500"),
+					),
+					html.Button(
+						html.Type("button"),
+						g.Attr("@click", "addCustomTech()"),
+						html.Class("bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer"),
+						g.Text("+ Добавить"),
+					),
+				),
+			),
+
+			// Description
 			html.Div(
 				html.Label(html.Class("block text-sm font-semibold text-gray-700 mb-1"), g.Text("Описание задачи")),
-				html.Textarea(html.Name("description"), html.Required(), html.Rows("5"), html.Class("w-full border border-gray-300 rounded px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500")),
+				html.Textarea(html.Name("description"), html.Required(), html.Rows("5"), html.Placeholder("Подробно опишите требования к задаче..."), html.Class("w-full border border-gray-300 rounded-lg px-3.5 py-2.5 focus:ring-2 focus:ring-indigo-500 text-sm")),
 			),
+
+			// Budget
 			html.Div(
 				html.Label(html.Class("block text-sm font-semibold text-gray-700 mb-1"), g.Text("Бюджет (₽)")),
-				html.Input(html.Type("number"), html.Name("budget"), html.Required(), html.Class("w-full border border-gray-300 rounded px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500")),
+				html.Input(html.Type("number"), html.Name("budget"), html.Required(), html.Placeholder("50000"), html.Class("w-full border border-gray-300 rounded-lg px-3.5 py-2.5 focus:ring-2 focus:ring-indigo-500 text-sm")),
 			),
+
+			// Submit Button
 			html.Button(
 				html.Type("submit"),
-				html.Class("w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded transition-colors"),
+				html.Class("w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition-all text-sm shadow-md hover:shadow-indigo-200"),
 				g.Text("Опубликовать заказ"),
 			),
 		),
+	)
+}
+
+func renderTechBadge(tech string) g.Node {
+	t := strings.TrimSpace(tech)
+	if t == "" {
+		return nil
+	}
+	lower := strings.ToLower(t)
+	colorClass := "bg-slate-100 text-slate-700 border-slate-200"
+
+	switch {
+	case strings.Contains(lower, "go") || strings.Contains(lower, "golang"):
+		colorClass = "bg-cyan-100 text-cyan-800 border-cyan-200"
+	case strings.Contains(lower, "python"):
+		colorClass = "bg-amber-100 text-amber-800 border-amber-200"
+	case strings.Contains(lower, "typescript") || strings.EqualFold(lower, "ts"):
+		colorClass = "bg-blue-100 text-blue-800 border-blue-200"
+	case strings.Contains(lower, "javascript") || strings.EqualFold(lower, "js"):
+		colorClass = "bg-yellow-100 text-yellow-800 border-yellow-200"
+	case strings.Contains(lower, "react") || strings.Contains(lower, "vue") || strings.Contains(lower, "next") || strings.Contains(lower, "htmx"):
+		colorClass = "bg-sky-100 text-sky-800 border-sky-200"
+	case strings.Contains(lower, "rust"):
+		colorClass = "bg-orange-100 text-orange-800 border-orange-200"
+	case strings.Contains(lower, "docker") || strings.Contains(lower, "kubernetes") || strings.Contains(lower, "k8s") || strings.Contains(lower, "devops") || strings.Contains(lower, "gitops"):
+		colorClass = "bg-indigo-100 text-indigo-800 border-indigo-200"
+	case strings.Contains(lower, "postgres") || strings.Contains(lower, "sql") || strings.Contains(lower, "redis"):
+		colorClass = "bg-emerald-100 text-emerald-800 border-emerald-200"
+	case strings.Contains(lower, "ml") || strings.Contains(lower, "ai") || strings.Contains(lower, "pytorch"):
+		colorClass = "bg-rose-100 text-rose-800 border-rose-200"
+	}
+
+	return html.Span(
+		html.Class("inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border "+colorClass),
+		g.Text(t),
 	)
 }
 
@@ -760,26 +957,50 @@ func (h *OrdersHandler) renderOrderDetail(order models.Order, user *models.User,
 				html.Class("flex justify-between items-start mb-6"),
 				html.Div(
 					html.H1(html.Class("text-3xl font-extrabold text-gray-900"), g.Text(order.Title)),
-					html.Span(
-						html.Class("inline-block mt-2 px-2.5 py-0.5 rounded-full text-xs font-semibold "+
-							map[string]string{
-								"open":        "bg-green-100 text-green-800",
-								"in_progress": "bg-blue-100 text-blue-800",
-								"completed":   "bg-gray-100 text-gray-800",
-								"cancelled":   "bg-red-100 text-red-800",
+					html.Div(
+						html.Class("flex items-center space-x-2 mt-2"),
+						html.Span(
+							html.Class("inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold "+
+								map[string]string{
+									"open":        "bg-green-100 text-green-800",
+									"in_progress": "bg-blue-100 text-blue-800",
+									"completed":   "bg-gray-100 text-gray-800",
+									"cancelled":   "bg-red-100 text-red-800",
+								}[order.Status]),
+							g.Text(map[string]string{
+								"open":        "Открыт",
+								"in_progress": "В работе",
+								"completed":   "Завершен",
+								"cancelled":   "Отменен",
 							}[order.Status]),
-						g.Text(map[string]string{
-							"open":        "Открыт",
-							"in_progress": "В работе",
-							"completed":   "Завершен",
-							"cancelled":   "Отменен",
-						}[order.Status]),
+						),
+						g.If(order.Category != "", html.Span(
+							html.Class("inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800"),
+							g.Text(order.Category),
+						)),
 					),
 				),
 				html.Span(html.Class("text-2xl font-extrabold text-green-600"), g.Text(fmt.Sprintf("%.0f ₽", order.Budget))),
 			),
+			g.If(order.RequiredTech != "", html.Div(
+				html.Class("mb-6 border-b border-gray-150 pb-4"),
+				html.H4(html.Class("text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2"), g.Text("Необходимые технологии")),
+				html.Div(
+					html.Class("flex flex-wrap gap-2"),
+					g.Group(func() []g.Node {
+						var tags []g.Node
+						for _, t := range strings.Split(order.RequiredTech, ",") {
+							trimmed := strings.TrimSpace(t)
+							if trimmed != "" {
+								tags = append(tags, renderTechBadge(trimmed))
+							}
+						}
+						return tags
+					}()),
+				),
+			)),
 			html.Div(
-				html.Class("prose max-w-none text-gray-700 mb-6"),
+				html.Class("prose max-w-none text-gray-700 mb-6 leading-relaxed"),
 				g.Text(order.Description),
 			),
 			html.Div(
