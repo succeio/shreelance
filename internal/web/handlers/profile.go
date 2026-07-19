@@ -219,5 +219,20 @@ func (h *ProfileHandler) renderProfilePage(user interface{}, role string) g.Node
 			),
 		),
 		specialistSection,
+		
+		// GitHub Activity Contribution Grid
+		html.Div(
+			html.Class("border-t border-gray-200 pt-6 mt-6"),
+			html.H2(html.Class("text-xl font-semibold mb-4 text-gray-900"), g.Text("Активность на GitHub")),
+			html.P(html.Class("text-xs text-gray-500 mb-4"), g.Text("История вкладов (commits, pull requests, issues) за последний год")),
+			html.Div(
+				html.Class("bg-slate-50 p-4 rounded-lg border border-slate-100 flex justify-center overflow-x-auto"),
+				html.Img(
+					html.Src("https://ghchart.rshah.org/4f46e5/"+u.Username),
+					html.Alt(u.Username+"'s GitHub Contributions Chart"),
+					html.Class("max-w-full h-auto min-w-[600px]"),
+				),
+			),
+		),
 	)
 }

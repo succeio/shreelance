@@ -136,28 +136,39 @@ func (h *HomeHandler) renderSpecialistsDashboard(specialists []models.User, sear
 	var specCards []g.Node
 	for _, s := range specialists {
 		specCards = append(specCards, html.Div(
-			html.Class("bg-white p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex items-start space-x-4"),
-			html.Img(html.Src(s.AvatarURL), html.Alt(s.Username), html.Class("w-14 h-14 rounded-full border border-gray-100")),
+			html.Class("bg-white p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex flex-col justify-between space-y-4"),
 			html.Div(
-				html.Class("flex-grow"),
-				html.H3(html.Class("text-lg font-bold text-gray-900"), g.Text(s.Username)),
-				html.P(html.Class("text-xs text-gray-500 mb-2"), g.Text(fmt.Sprintf("Опыт работы: %d %s", s.ExperienceYears, pluralizeYears(s.ExperienceYears)))),
-				g.If(s.Stack != "", html.Div(
-					html.Class("flex flex-wrap gap-1 mt-1"),
-					g.Group(func() []g.Node {
-						var tags []g.Node
-						for _, t := range strings.Split(s.Stack, ",") {
-							trimmed := strings.TrimSpace(t)
-							if trimmed != "" {
-								tags = append(tags, html.Span(
-									html.Class("inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100"),
-									g.Text(trimmed),
-								))
+				html.Class("flex items-start space-x-4"),
+				html.Img(html.Src(s.AvatarURL), html.Alt(s.Username), html.Class("w-14 h-14 rounded-full border border-gray-100")),
+				html.Div(
+					html.Class("flex-grow"),
+					html.H3(html.Class("text-lg font-bold text-gray-900"), g.Text(s.Username)),
+					html.P(html.Class("text-xs text-gray-500 mb-2"), g.Text(fmt.Sprintf("Опыт работы: %d %s", s.ExperienceYears, pluralizeYears(s.ExperienceYears)))),
+					g.If(s.Stack != "", html.Div(
+						html.Class("flex flex-wrap gap-1 mt-1"),
+						g.Group(func() []g.Node {
+							var tags []g.Node
+							for _, t := range strings.Split(s.Stack, ",") {
+								trimmed := strings.TrimSpace(t)
+								if trimmed != "" {
+									tags = append(tags, html.Span(
+										html.Class("inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100"),
+										g.Text(trimmed),
+									))
+								}
 							}
-						}
-						return tags
-					}()),
-				)),
+							return tags
+						}()),
+					)),
+				),
+			),
+			html.Div(
+				html.Class("border-t border-gray-100 pt-3 overflow-hidden"),
+				html.Img(
+					html.Src("https://ghchart.rshah.org/4f46e5/"+s.Username),
+					html.Alt(s.Username+"'s GitHub Contributions Chart"),
+					html.Class("w-full h-auto min-h-[45px] object-cover rounded"),
+				),
 			),
 		))
 	}
