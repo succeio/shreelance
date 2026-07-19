@@ -44,9 +44,11 @@ func (h *OrdersHandler) List(w http.ResponseWriter, r *http.Request) {
 	user, role := GetUserFromSession(h.DB, h.Session, r)
 
 	var orders []models.Order
+	// Only open/in_progress or customer-owned (but excluding completed/cancelled for non-owner/non-freelancer)
+	// Completed and cancelled orders should not appear in the general orders list.
 	query := h.DB.Preload("Customer")
 	if user != nil {
-		query = query.Where("status = ? OR customer_id = ? OR id IN (SELECT order_id FROM bids WHERE freelancer_id = ?)", "open", user.ID, user.ID)
+		query = query.Where("(status = 'open' OR status = 'in_progress') AND (status != 'completed' AND status != 'cancelled')")
 	} else {
 		query = query.Where("status = ?", "open")
 	}
@@ -177,6 +179,18 @@ func (h *OrdersHandler) Detail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if user != nil {
+		// Clear unread chat count for this order for current user by setting last read message ID to stream's latest message ID
+		streamKey := fmt.Sprintf("chat:order:%d", order.ID)
+		streams, err := h.RDB.XRevRangeN(context.Background(), streamKey, "+", "-", 1).Result()
+		if err == nil && len(streams) > 0 {
+			h.RDB.Set(context.Background(), fmt.Sprintf("chat:order:%d:user:%d:last_read", order.ID, user.ID), streams[0].ID, 0)
+		}
+
+		// Recalculate user's global unread notifications (excluding this order's cleared count) for the current response layout
+		user, role = GetUserFromSession(h.DB, h.Session, r)
+	}
+
 	content := ui.OrderDetail(order, user, role, csrf.Token(r))
 	layout := ui.Layout(ui.PageParams{
 		Title:       "Заказ #" + idStr,
@@ -259,6 +273,58 @@ func (h *OrdersHandler) AcceptBid(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tx.Commit()
+
+	http.Redirect(w, r, fmt.Sprintf("/orders/%d", order.ID), http.StatusSeeOther)
+}
+
+func (h *OrdersHandler) RejectBid(w http.ResponseWriter, r *http.Request) {
+	user, _ := GetUserFromSession(h.DB, h.Session, r)
+	if user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	orderId, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid Order ID", http.StatusBadRequest)
+		return
+	}
+
+	bidIdStr := chi.URLParam(r, "bidId")
+	bidId, err := strconv.Atoi(bidIdStr)
+	if err != nil {
+		http.Error(w, "Invalid Bid ID", http.StatusBadRequest)
+		return
+	}
+
+	var order models.Order
+	if err := h.DB.First(&order, orderId).Error; err != nil {
+		http.Error(w, "Order not found", http.StatusNotFound)
+		return
+	}
+
+	if order.CustomerID != user.ID {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	var bid models.Bid
+	if err := h.DB.First(&bid, bidId).Error; err != nil {
+		http.Error(w, "Bid not found", http.StatusNotFound)
+		return
+	}
+
+	if bid.OrderID != order.ID {
+		http.Error(w, "Bid does not belong to this order", http.StatusBadRequest)
+		return
+	}
+
+	bid.Status = "rejected"
+	if err := h.DB.Save(&bid).Error; err != nil {
+		http.Error(w, "Failed to reject bid", http.StatusInternalServerError)
+		return
+	}
 
 	http.Redirect(w, r, fmt.Sprintf("/orders/%d", order.ID), http.StatusSeeOther)
 }
@@ -370,24 +436,56 @@ func (h *OrdersHandler) SendChatMessage(w http.ResponseWriter, r *http.Request) 
 	}
 
 	streamKey := fmt.Sprintf("chat:order:%d", order.ID)
-	err = h.RDB.XAdd(context.Background(), &redis.XAddArgs{
+	msgID, err := h.RDB.XAdd(context.Background(), &redis.XAddArgs{
 		Stream: streamKey,
 		Values: map[string]interface{}{
 			"message": string(data),
 		},
-	}).Err()
+	}).Result()
 
 	if err != nil {
 		http.Error(w, "Failed to stream message", http.StatusInternalServerError)
 		return
 	}
 
+	// Determine recipient
+	var recipientID uint
+	if user.ID == order.CustomerID {
+		if order.FreelancerID != nil {
+			recipientID = *order.FreelancerID
+		}
+	} else {
+		recipientID = order.CustomerID
+	}
+
+	if recipientID > 0 {
+		// Store last read message ID for sender as current msgID
+		h.RDB.Set(context.Background(), fmt.Sprintf("chat:order:%d:user:%d:last_read", order.ID, user.ID), msgID, 0)
+	}
+
 	// Render the single new message template back to HTMX
+	theme := GetThemeFromCookie(r)
+	if theme == "system" {
+		if cookie, err := r.Cookie("system_theme"); err == nil {
+			theme = cookie.Value
+		}
+	}
+	bgColor := "bg-indigo-50 border-indigo-100"
+	nameColor := "text-indigo-700"
+	textColor := "text-gray-700"
+	timeColor := "text-gray-400"
+	if theme == "dark" {
+		bgColor = "bg-indigo-950/40 border-indigo-900/60"
+		nameColor = "text-indigo-300"
+		textColor = "text-zinc-200"
+		timeColor = "text-zinc-500"
+	}
+
 	htmlMsg := html.Div(
-		html.Class("p-2 rounded bg-indigo-50 border border-indigo-100"),
-		html.P(html.Class("text-xs font-bold text-indigo-700"), g.Text(msg.SenderName)),
-		html.P(html.Class("text-sm text-gray-700"), g.Text(msg.Text)),
-		html.P(html.Class("text-right text-[10px] text-gray-400"), g.Text(msg.CreatedAt.Format("15:04:05"))),
+		html.Class("p-2.5 rounded-xl border "+bgColor),
+		html.P(html.Class("text-xs font-bold "+nameColor), g.Text(msg.SenderName)),
+		html.P(html.Class("text-sm "+textColor), g.Text(msg.Text)),
+		html.P(html.Class("text-right text-[10px] "+timeColor), g.Text(msg.CreatedAt.Format("15:04:05"))),
 	)
 	_ = htmlMsg.Render(w)
 }
@@ -424,6 +522,18 @@ func (h *OrdersHandler) GetChatMessages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if len(streams) > 0 {
+		// Update last read message ID for this order
+		h.RDB.Set(context.Background(), fmt.Sprintf("chat:order:%d:user:%d:last_read", order.ID, user.ID), streams[len(streams)-1].ID, 0)
+	}
+
+	theme := GetThemeFromCookie(r)
+	if theme == "system" {
+		if cookie, err := r.Cookie("system_theme"); err == nil {
+			theme = cookie.Value
+		}
+	}
+
 	var renderedMessages []g.Node
 	for _, stream := range streams {
 		msgStr, ok := stream.Values["message"].(string)
@@ -436,18 +546,32 @@ func (h *OrdersHandler) GetChatMessages(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 
-		bgColor := "bg-gray-100 border-gray-200"
-		nameColor := "text-gray-700"
-		if msg.SenderID == user.ID {
-			bgColor = "bg-indigo-50 border-indigo-100"
-			nameColor = "text-indigo-700"
+		var bgColor, nameColor, textColor, timeColor string
+		if theme == "dark" {
+			bgColor = "bg-zinc-800 border-zinc-700"
+			nameColor = "text-zinc-100"
+			textColor = "text-zinc-200"
+			timeColor = "text-zinc-500"
+			if msg.SenderID == user.ID {
+				bgColor = "bg-indigo-950/40 border-indigo-900/60"
+				nameColor = "text-indigo-300"
+			}
+		} else {
+			bgColor = "bg-gray-100 border-gray-200"
+			nameColor = "text-gray-700"
+			textColor = "text-gray-700"
+			timeColor = "text-gray-400"
+			if msg.SenderID == user.ID {
+				bgColor = "bg-indigo-50 border-indigo-100"
+				nameColor = "text-indigo-700"
+			}
 		}
 
 		renderedMessages = append(renderedMessages, html.Div(
-			html.Class("p-2 rounded border "+bgColor),
+			html.Class("p-2.5 rounded-xl border "+bgColor),
 			html.P(html.Class("text-xs font-bold "+nameColor), g.Text(msg.SenderName)),
-			html.P(html.Class("text-sm text-gray-700"), g.Text(msg.Text)),
-			html.P(html.Class("text-right text-[10px] text-gray-400"), g.Text(msg.CreatedAt.Format("15:04:05"))),
+			html.P(html.Class("text-sm "+textColor), g.Text(msg.Text)),
+			html.P(html.Class("text-right text-[10px] "+timeColor), g.Text(msg.CreatedAt.Format("15:04:05"))),
 		))
 	}
 
@@ -473,6 +597,25 @@ func (h *OrdersHandler) CreateBid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var order models.Order
+	if err := h.DB.First(&order, orderID).Error; err != nil {
+		http.Error(w, "Заказ не найден", http.StatusNotFound)
+		return
+	}
+
+	if order.Status != "open" {
+		http.Error(w, "Нельзя откликнуться на этот заказ, он уже не активен", http.StatusBadRequest)
+		return
+	}
+
+	// Check if this freelancer has already bid on this order
+	var count int64
+	h.DB.Model(&models.Bid{}).Where("order_id = ? AND freelancer_id = ?", orderID, user.ID).Count(&count)
+	if count > 0 {
+		http.Error(w, "Вы уже откликнулись на этот заказ", http.StatusBadRequest)
+		return
+	}
+
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
@@ -493,6 +636,233 @@ func (h *OrdersHandler) CreateBid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Increment unread notifications for the order's customer to notify them of a new bid
+	h.DB.Model(&models.User{}).Where("id = ?", order.CustomerID).UpdateColumn("unread_notifications", gorm.Expr("unread_notifications + ?", 1))
+
 	http.Redirect(w, r, fmt.Sprintf("/orders/%d", orderID), http.StatusSeeOther)
 }
 
+func (h *OrdersHandler) MyOrders(w http.ResponseWriter, r *http.Request) {
+	user, role := GetUserFromSession(h.DB, h.Session, r)
+	if user == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	var orders []models.Order
+	if role == "freelancer" {
+		h.DB.Preload("Customer").Preload("Bids").Where("freelancer_id = ?", user.ID).Order("updated_at desc").Find(&orders)
+	} else {
+		h.DB.Preload("Freelancer").Preload("Bids").Where("customer_id = ?", user.ID).Order("updated_at desc").Find(&orders)
+		// Reset unread status notifications count when customer visits My Orders
+		if user.UnreadNotifications > 0 {
+			h.DB.Model(&models.User{}).Where("id = ?", user.ID).Update("unread_notifications", 0)
+			user.UnreadNotifications = 0
+		}
+	}
+
+	// Calculate unread chat messages per order from Valkey Stream
+	unreadCounts := make(map[uint]int)
+	totalUnreadChats := 0
+	ctx := context.Background()
+
+	for _, o := range orders {
+		streamKey := fmt.Sprintf("chat:order:%d", o.ID)
+		lastReadID, err := h.RDB.Get(ctx, fmt.Sprintf("chat:order:%d:user:%d:last_read", o.ID, user.ID)).Result()
+		if err == redis.Nil || lastReadID == "" {
+			lastReadID = "-"
+		}
+
+		// Query messages after lastReadID
+		var start string
+		if lastReadID == "-" {
+			start = "-"
+		} else {
+			start = "(" + lastReadID
+		}
+
+		streams, err := h.RDB.XRange(ctx, streamKey, start, "+").Result()
+		if err == nil {
+			count := 0
+			for _, s := range streams {
+				msgStr, ok := s.Values["message"].(string)
+				if !ok {
+					continue
+				}
+				var msg ChatMessage
+				if err := json.Unmarshal([]byte(msgStr), &msg); err == nil {
+					// Count only messages sent by the other party
+					if msg.SenderID != user.ID {
+						count++
+					}
+				}
+			}
+			if count > 0 {
+				unreadCounts[o.ID] = count
+				totalUnreadChats += count
+			}
+		}
+	}
+
+	// Sum total notifications (unread status changes + unread chat messages)
+	user.UnreadNotifications += totalUnreadChats
+
+	content := ui.MyOrdersPage(orders, unreadCounts, user, role, csrf.Token(r))
+	layout := ui.Layout(ui.PageParams{
+		Title:       map[string]string{"customer": "Мои Заказы", "freelancer": "Мои Работы"}[role],
+		Content:     content,
+		User:        user,
+		CSRFToken:   csrf.Token(r),
+		ContextRole: role,
+		Theme:       GetThemeFromCookie(r),
+	})
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = layout.Render(w)
+}
+
+func (h *OrdersHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	user, _ := GetUserFromSession(h.DB, h.Session, r)
+	if user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	status := r.FormValue("status")
+	if status != "in_progress" && status != "completed" {
+		http.Error(w, "Invalid status", http.StatusBadRequest)
+		return
+	}
+
+	var order models.Order
+	if err := h.DB.First(&order, id).Error; err != nil {
+		http.Error(w, "Order not found", http.StatusNotFound)
+		return
+	}
+
+	// Only assigned Freelancer OR the Customer themselves can complete the order
+	if order.CustomerID != user.ID && (order.FreelancerID == nil || *order.FreelancerID != user.ID) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	order.Status = status
+	if err := h.DB.Save(&order).Error; err != nil {
+		http.Error(w, "Failed to update status", http.StatusInternalServerError)
+		return
+	}
+
+	// Increment unread notifications for customer if freelancer changed it
+	if user.ID != order.CustomerID {
+		h.DB.Model(&models.User{}).Where("id = ?", order.CustomerID).UpdateColumn("unread_notifications", gorm.Expr("unread_notifications + ?", 1))
+	}
+
+	referer := r.Header.Get("Referer")
+	if referer != "" {
+		http.Redirect(w, r, referer, http.StatusSeeOther)
+	} else {
+		http.Redirect(w, r, "/my-orders", http.StatusSeeOther)
+	}
+}
+
+func (h *OrdersHandler) EditForm(w http.ResponseWriter, r *http.Request) {
+	user, role := GetUserFromSession(h.DB, h.Session, r)
+	if user == nil || role != "customer" {
+		http.Error(w, "Доступно только в роли Заказчика", http.StatusForbidden)
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid Order ID", http.StatusBadRequest)
+		return
+	}
+
+	var order models.Order
+	if err := h.DB.First(&order, id).Error; err != nil {
+		http.Error(w, "Order not found", http.StatusNotFound)
+		return
+	}
+
+	if order.CustomerID != user.ID {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	if order.FreelancerID != nil {
+		http.Error(w, "Нельзя редактировать заказ после назначения исполнителя", http.StatusBadRequest)
+		return
+	}
+
+	content := ui.OrderEditForm(order, csrf.Token(r))
+	layout := ui.Layout(ui.PageParams{
+		Title:       "Редактировать заказ",
+		Content:     content,
+		User:        user,
+		CSRFToken:   csrf.Token(r),
+		ContextRole: role,
+		Theme:       GetThemeFromCookie(r),
+	})
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = layout.Render(w)
+}
+
+func (h *OrdersHandler) Edit(w http.ResponseWriter, r *http.Request) {
+	user, role := GetUserFromSession(h.DB, h.Session, r)
+	if user == nil || role != "customer" {
+		http.Error(w, "Доступно только в роли Заказчика", http.StatusForbidden)
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid Order ID", http.StatusBadRequest)
+		return
+	}
+
+	var order models.Order
+	if err := h.DB.First(&order, id).Error; err != nil {
+		http.Error(w, "Order not found", http.StatusNotFound)
+		return
+	}
+
+	if order.CustomerID != user.ID {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	if order.FreelancerID != nil {
+		http.Error(w, "Нельзя редактировать заказ после назначения исполнителя", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	budget, _ := strconv.ParseFloat(r.FormValue("budget"), 64)
+
+	order.Title = r.FormValue("title")
+	order.Description = r.FormValue("description")
+	order.Budget = budget
+	order.Category = r.FormValue("category")
+	order.RequiredTech = r.FormValue("required_tech")
+
+	if err := h.DB.Save(&order).Error; err != nil {
+		http.Error(w, "Failed to update order: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/orders/%d", order.ID), http.StatusSeeOther)
+}

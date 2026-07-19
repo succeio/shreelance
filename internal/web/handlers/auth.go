@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/alexedwards/scs/v2"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
@@ -540,6 +541,14 @@ func (h *AuthHandler) LoginEmail(w http.ResponseWriter, r *http.Request) {
 
 // GetUserFromSession helper
 func GetUserFromSession(db *gorm.DB, session *scs.SessionManager, r *http.Request) (*models.User, string) {
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	defer rdb.Close()
+	return GetUserFromSessionWithRedis(db, session, rdb, r)
+}
+
+func GetUserFromSessionWithRedis(db *gorm.DB, session *scs.SessionManager, rdb *redis.Client, r *http.Request) (*models.User, string) {
 	userIDVal := session.Get(r.Context(), "userID")
 	if userIDVal == nil {
 		return nil, ""
@@ -565,8 +574,55 @@ func GetUserFromSession(db *gorm.DB, session *scs.SessionManager, r *http.Reques
 
 	roleVal := session.Get(r.Context(), "role")
 	role := "customer"
-	if r, ok := roleVal.(string); ok && (r == "customer" || r == "freelancer") {
-		role = r
+	if rVal, ok := roleVal.(string); ok && (rVal == "customer" || rVal == "freelancer") {
+		role = rVal
+	}
+
+	if rdb != nil {
+		// Calculate unread chat messages for this user across all their orders
+		var orders []models.Order
+		if role == "freelancer" {
+			db.Where("freelancer_id = ?", user.ID).Find(&orders)
+		} else {
+			db.Where("customer_id = ?", user.ID).Find(&orders)
+		}
+
+		totalUnreadChats := 0
+		ctx := r.Context()
+		for _, o := range orders {
+			streamKey := fmt.Sprintf("chat:order:%d", o.ID)
+			lastReadID, err := rdb.Get(ctx, fmt.Sprintf("chat:order:%d:user:%d:last_read", o.ID, user.ID)).Result()
+			if err == redis.Nil || lastReadID == "" {
+				lastReadID = "-"
+			}
+
+			var start string
+			if lastReadID == "-" {
+				start = "-"
+			} else {
+				start = "(" + lastReadID
+			}
+
+			streams, err := rdb.XRange(ctx, streamKey, start, "+").Result()
+			if err == nil {
+				for _, s := range streams {
+					msgStr, ok := s.Values["message"].(string)
+					if !ok {
+						continue
+					}
+					var msg struct {
+						SenderID uint `json:"sender_id"`
+					}
+					if err := json.Unmarshal([]byte(msgStr), &msg); err == nil {
+						if msg.SenderID != user.ID {
+							totalUnreadChats++
+						}
+					}
+				}
+			}
+		}
+
+		user.UnreadNotifications += totalUnreadChats
 	}
 
 	return &user, role

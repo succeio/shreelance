@@ -358,30 +358,55 @@ func OrderCreateForm(csrfToken string) g.Node {
 
 func OrderDetail(order models.Order, user *models.User, role string, csrfToken string) g.Node {
 	var bidForm g.Node
-	if user != nil && role == "freelancer" && order.CustomerID != user.ID {
-		bidForm = html.Div(
-			html.Class("mt-8 bg-panel-bg dark:bg-panel-bg-dark p-6 rounded-2xl border border-panel-border dark:border-panel-border-dark"),
-			html.H3(html.Class("text-lg font-bold mb-4 text-app-text dark:text-headline-dark"), g.Text("Откликнуться на заказ")),
-			html.Form(
-				html.Action(fmt.Sprintf("/orders/%d/bids", order.ID)),
-				html.Method("POST"),
-				html.Class("space-y-4"),
-				html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
-				html.Div(
-					html.Label(html.Class("block text-sm font-semibold text-app-text dark:text-headline-dark mb-1"), g.Text("Предлагаемая стоимость (₽)")),
-					html.Input(html.Type("number"), html.Name("price"), html.Required(), html.Class("w-full border border-panel-border dark:border-panel-border-dark bg-app-bg dark:bg-app-bg-dark text-app-text dark:text-app-text-dark rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-brand-primary dark:focus:ring-brand-primary-dark text-sm")),
+	if user != nil && role == "freelancer" && order.CustomerID != user.ID && order.Status == "open" {
+		// Check if freelancer has a rejected bid or already bid
+		hasAlreadyBid := false
+		isRejected := false
+		for _, b := range order.Bids {
+			if b.FreelancerID == user.ID {
+				hasAlreadyBid = true
+				if b.Status == "rejected" {
+					isRejected = true
+				}
+				break
+			}
+		}
+
+		if isRejected {
+			bidForm = html.Div(
+				html.Class("mt-8 bg-panel-bg dark:bg-panel-bg-dark p-6 rounded-2xl border border-panel-border dark:border-panel-border-dark text-center"),
+				html.P(html.Class("text-sm font-semibold text-red-600 dark:text-red-400"), g.Text("Заказчик отклонил ваш отклик на этот заказ")),
+			)
+		} else if hasAlreadyBid {
+			bidForm = html.Div(
+				html.Class("mt-8 bg-panel-bg dark:bg-panel-bg-dark p-6 rounded-2xl border border-panel-border dark:border-panel-border-dark text-center"),
+				html.P(html.Class("text-sm font-semibold text-brand-primary dark:text-brand-primary-dark"), g.Text("Вы уже откликнулись на этот заказ")),
+			)
+		} else {
+			bidForm = html.Div(
+				html.Class("mt-8 bg-panel-bg dark:bg-panel-bg-dark p-6 rounded-2xl border border-panel-border dark:border-panel-border-dark"),
+				html.H3(html.Class("text-lg font-bold mb-4 text-app-text dark:text-headline-dark"), g.Text("Откликнуться на заказ")),
+				html.Form(
+					html.Action(fmt.Sprintf("/orders/%d/bids", order.ID)),
+					html.Method("POST"),
+					html.Class("space-y-4"),
+					html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
+					html.Div(
+						html.Label(html.Class("block text-sm font-semibold text-app-text dark:text-headline-dark mb-1"), g.Text("Предлагаемая стоимость (₽)")),
+						html.Input(html.Type("number"), html.Name("price"), html.Required(), html.Class("w-full border border-panel-border dark:border-panel-border-dark bg-app-bg dark:bg-app-bg-dark text-app-text dark:text-app-text-dark rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-brand-primary dark:focus:ring-brand-primary-dark text-sm")),
+					),
+					html.Div(
+						html.Label(html.Class("block text-sm font-semibold text-app-text dark:text-headline-dark mb-1"), g.Text("Сопроводительное письмо")),
+						html.Textarea(html.Name("comment"), html.Required(), html.Rows("3"), html.Class("w-full border border-panel-border dark:border-panel-border-dark bg-app-bg dark:bg-app-bg-dark text-app-text dark:text-app-text-dark rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-brand-primary dark:focus:ring-brand-primary-dark text-sm")),
+					),
+					html.Button(
+						html.Type("submit"),
+						html.Class("w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-xl transition-colors cursor-pointer"),
+						g.Text("Отправить отклик"),
+					),
 				),
-				html.Div(
-					html.Label(html.Class("block text-sm font-semibold text-app-text dark:text-headline-dark mb-1"), g.Text("Сопроводительное письмо")),
-					html.Textarea(html.Name("comment"), html.Required(), html.Rows("3"), html.Class("w-full border border-panel-border dark:border-panel-border-dark bg-app-bg dark:bg-app-bg-dark text-app-text dark:text-app-text-dark rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-brand-primary dark:focus:ring-brand-primary-dark text-sm")),
-				),
-				html.Button(
-					html.Type("submit"),
-					html.Class("w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-xl transition-colors cursor-pointer"),
-					g.Text("Отправить отклик"),
-				),
-			),
-		)
+			)
+		}
 	}
 
 	var bidsList []g.Node
@@ -391,8 +416,14 @@ func OrderDetail(order models.Order, user *models.User, role string, csrfToken s
 			continue
 		}
 
-		// If current user is the customer and the order is open, they should see an "Accept" button
+		// Don't show rejected bids to customer or freelancer in the list
+		if b.Status == "rejected" {
+			continue
+		}
+
+		// If current user is the customer and the order is open, they should see "Accept" and "Reject" buttons
 		var acceptButton g.Node
+		var rejectButton g.Node
 		if user.ID == order.CustomerID && order.Status == "open" {
 			acceptButton = html.Form(
 				html.Action(fmt.Sprintf("/orders/%d/bids/%d/accept", order.ID, b.ID)),
@@ -403,6 +434,17 @@ func OrderDetail(order models.Order, user *models.User, role string, csrfToken s
 					html.Type("submit"),
 					html.Class("bg-brand-primary dark:bg-brand-primary-dark hover:opacity-90 text-white dark:text-btn-text-dark text-xs font-semibold py-1.5 px-3 rounded-xl transition-colors cursor-pointer"),
 					g.Text("Выбрать исполнителем"),
+				),
+			)
+			rejectButton = html.Form(
+				html.Action(fmt.Sprintf("/orders/%d/bids/%d/reject", order.ID, b.ID)),
+				html.Method("POST"),
+				html.Class("inline-block"),
+				html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
+				html.Button(
+					html.Type("submit"),
+					html.Class("bg-red-600 hover:bg-red-700 text-white text-xs font-semibold py-1.5 px-3 rounded-xl transition-colors cursor-pointer"),
+					g.Text("Отклонить"),
 				),
 			)
 		}
@@ -419,6 +461,7 @@ func OrderDetail(order models.Order, user *models.User, role string, csrfToken s
 					html.Class("flex items-center space-x-3"),
 					html.Span(html.Class("font-bold text-emerald-600 dark:text-emerald-400 mr-2"), g.Text(fmt.Sprintf("%.0f ₽", b.Price))),
 					acceptButton,
+					rejectButton,
 				),
 			),
 			html.P(html.Class("text-sm text-app-text-muted dark:text-app-text-muted-dark"), g.Text(b.Comment)),
@@ -426,24 +469,33 @@ func OrderDetail(order models.Order, user *models.User, role string, csrfToken s
 	}
 
 	var bidsContainer g.Node
-	if len(bidsList) > 0 {
-		bidsContainer = html.Div(
-			html.Class("mt-8 bg-panel-bg dark:bg-panel-bg-dark rounded-2xl shadow-sm border border-panel-border dark:border-panel-border-dark overflow-hidden"),
-			html.Div(html.Class("p-4 border-b border-panel-border dark:border-panel-border-dark bg-app-bg dark:bg-app-bg-dark rounded-t-2xl"), html.H3(html.Class("font-bold text-app-text dark:text-headline-dark"), g.Text("Отклики исполнителей"))),
-			html.Div(g.Group(bidsList)),
-		)
-	} else {
-		bidsContainer = html.Div(
-			html.Class("mt-8 text-center text-app-text-muted dark:text-app-text-muted-dark py-6"),
-			g.Text("Откликов на это задание пока нет."),
-		)
+	if order.Status == "open" {
+		if len(bidsList) > 0 {
+			bidsContainer = html.Div(
+				html.Class("mt-8 bg-panel-bg dark:bg-panel-bg-dark rounded-2xl shadow-sm border border-panel-border dark:border-panel-border-dark overflow-hidden"),
+				html.Div(html.Class("p-4 border-b border-panel-border dark:border-panel-border-dark bg-app-bg dark:bg-app-bg-dark rounded-t-2xl"), html.H3(html.Class("font-bold text-app-text dark:text-headline-dark"), g.Text("Отклики исполнителей"))),
+				html.Div(g.Group(bidsList)),
+			)
+		} else {
+			bidsContainer = html.Div(
+				html.Class("mt-8 text-center text-app-text-muted dark:text-app-text-muted-dark py-6"),
+				g.Text("Откликов на это задание пока нет."),
+			)
+		}
 	}
 
 	var chatContainer g.Node
 	if (order.Status == "in_progress" || order.Status == "completed") && user != nil && (order.CustomerID == user.ID || (order.FreelancerID != nil && *order.FreelancerID == user.ID)) {
+		var chatTitle string
+		if order.Freelancer != nil {
+			chatTitle = fmt.Sprintf("Чат по заказу (Исполнитель: %s)", order.Freelancer.Username)
+		} else {
+			chatTitle = "Чат по заказу"
+		}
+
 		chatContainer = html.Div(
 			html.Class("mt-8 bg-panel-bg dark:bg-panel-bg-dark rounded-2xl shadow-sm border border-panel-border dark:border-panel-border-dark p-6"),
-			html.H3(html.Class("text-lg font-bold text-app-text dark:text-headline-dark mb-4"), g.Text("Чат по заказу")),
+			html.H3(html.Class("text-lg font-bold text-app-text dark:text-headline-dark mb-4"), g.Text(chatTitle)),
 			html.Div(
 				html.ID("chat-messages"),
 				html.Class("h-64 overflow-y-auto p-4 bg-app-bg dark:bg-app-bg-dark rounded-xl border border-panel-border dark:border-panel-border-dark mb-4 space-y-2"),
@@ -468,6 +520,7 @@ func OrderDetail(order models.Order, user *models.User, role string, csrfToken s
 				html.Button(
 					html.Type("submit"),
 					html.Class("bg-brand-primary dark:bg-brand-primary-dark hover:opacity-90 text-white dark:text-btn-text-dark font-semibold px-4 py-2 rounded-xl transition-colors cursor-pointer text-sm"),
+					g.Text("Отправить"),
 				),
 			),
 		)
@@ -475,19 +528,46 @@ func OrderDetail(order models.Order, user *models.User, role string, csrfToken s
 
 	var actionButtons g.Node
 	if user != nil && (order.CustomerID == user.ID || (order.FreelancerID != nil && *order.FreelancerID == user.ID)) {
+		var buttons []g.Node
 		if order.Status == "in_progress" {
-			actionButtons = html.Div(
-				html.Class("flex space-x-4 mt-6"),
-				html.Form(
-					html.Action(fmt.Sprintf("/orders/%d/cancel", order.ID)),
+			buttons = append(buttons, html.Form(
+				html.Action(fmt.Sprintf("/orders/%d/cancel", order.ID)),
+				html.Method("POST"),
+				html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
+				html.Button(
+					html.Type("submit"),
+					html.Class("bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-xl transition-colors cursor-pointer text-sm"),
+					g.Text("Отказаться от работы (Вернуть в список / Отменить)"),
+				),
+			))
+
+			if user.ID == order.CustomerID {
+				buttons = append(buttons, html.Form(
+					html.Action(fmt.Sprintf("/my-orders/%d/status", order.ID)),
 					html.Method("POST"),
 					html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
+					html.Input(html.Type("hidden"), html.Name("status"), html.Value("completed")),
 					html.Button(
 						html.Type("submit"),
-						html.Class("bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-xl transition-colors cursor-pointer text-sm"),
-						g.Text("Отказаться от работы (Вернуть в список / Отменить)"),
+						html.Class("bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-xl transition-colors cursor-pointer text-sm"),
+						g.Text("Завершить заказ"),
 					),
-				),
+				))
+			}
+		}
+
+		if order.Status == "open" && user.ID == order.CustomerID {
+			buttons = append(buttons, html.A(
+				html.Href(fmt.Sprintf("/orders/%d/edit", order.ID)),
+				html.Class("bg-brand-primary dark:bg-brand-primary-dark hover:opacity-90 text-white dark:text-btn-text-dark font-semibold py-2 px-4 rounded-xl transition-colors text-sm"),
+				g.Text("Редактировать заказ"),
+			))
+		}
+
+		if len(buttons) > 0 {
+			actionButtons = html.Div(
+				html.Class("flex space-x-4 mt-6"),
+				g.Group(buttons),
 			)
 		}
 	}

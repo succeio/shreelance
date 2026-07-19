@@ -21,7 +21,7 @@ func Layout(p PageParams) g.Node {
 			h.Meta(h.Charset("UTF-8")),
 			h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1.0")),
 			h.Title(p.Title+" - Shreelance"),
-			// Inline script to prevent theme flash (FOUC)
+			// Inline script to prevent theme flash (FOUC) and set system theme cookie
 			h.Script(g.Raw(`
 				(function() {
 					// Read theme from cookies first (set by server) or localStorage, defaulting to 'system'
@@ -31,7 +31,13 @@ func Layout(p PageParams) g.Node {
 						if (parts.length === 2) return parts.pop().split(";").shift();
 					};
 					const theme = getCookie('theme') || localStorage.getItem('theme') || 'system';
-					if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+					const isDarkSystem = window.matchMedia('(prefers-color-scheme: dark)').matches;
+					
+					// Set a cookie with the actual resolved system theme so the server knows it on API requests
+					const resolvedTheme = (theme === 'dark' || (theme === 'system' && isDarkSystem)) ? 'dark' : 'light';
+					document.cookie = "system_theme=" + resolvedTheme + "; path=/; max-age=31536000; SameSite=Lax";
+
+					if (theme === 'dark' || (theme === 'system' && isDarkSystem)) {
 						document.documentElement.classList.add('dark');
 					} else {
 						document.documentElement.classList.remove('dark');

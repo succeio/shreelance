@@ -24,6 +24,9 @@ type User struct {
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+	
+	// UnreadNotificationsCount indicates if status updates haven't been seen by user
+	UnreadNotifications int `gorm:"default:0" json:"unread_notifications"`
 
 	Orders []Order `gorm:"foreignKey:CustomerID" json:"orders,omitempty"`
 	Bids   []Bid   `gorm:"foreignKey:FreelancerID" json:"bids,omitempty"`

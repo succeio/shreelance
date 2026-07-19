@@ -111,11 +111,18 @@ func NewRouter(cfg *config.Config, db *gorm.DB, session *scs.SessionManager) htt
 	r.Get("/orders/new", ordersHandler.CreateForm)
 	r.Post("/orders", ordersHandler.Create)
 	r.Get("/orders/{id}", ordersHandler.Detail)
+	r.Get("/orders/{id}/edit", ordersHandler.EditForm)
+	r.Post("/orders/{id}/edit", ordersHandler.Edit)
 	r.Post("/orders/{id}/bids", ordersHandler.CreateBid)
 	r.Post("/orders/{id}/bids/{bidId}/accept", ordersHandler.AcceptBid)
+	r.Post("/orders/{id}/bids/{bidId}/reject", ordersHandler.RejectBid)
 	r.Post("/orders/{id}/cancel", ordersHandler.CancelOrder)
 	r.Post("/orders/{id}/chat/send", ordersHandler.SendChatMessage)
 	r.Get("/orders/{id}/chat/messages", ordersHandler.GetChatMessages)
+
+	// My Orders & Status Updates
+	r.Get("/my-orders", ordersHandler.MyOrders)
+	r.Post("/my-orders/{id}/status", ordersHandler.UpdateStatus)
 
 	return r
 }

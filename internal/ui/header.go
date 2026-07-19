@@ -174,6 +174,21 @@ func Navbar(p PageParams) g.Node {
 			h.Nav(
 				h.Class("flex items-center space-x-6"),
 				h.A(h.Href("/orders"), h.Class("text-app-text-muted dark:text-app-text-muted-dark hover:text-brand-primary dark:hover:text-brand-primary-dark font-medium"), g.Text("Заказы")),
+				g.If(hasUser, h.A(
+					h.Href("/my-orders"),
+					h.Class("relative text-app-text-muted dark:text-app-text-muted-dark hover:text-brand-primary dark:hover:text-brand-primary-dark font-medium flex items-center space-x-1.5"),
+					g.Text(map[string]string{"customer": "Мои Заказы", "freelancer": "Мои Работы"}[p.ContextRole]),
+					g.If(func() bool {
+						if u, ok := p.User.(*models.User); ok && u != nil {
+							return u.UnreadNotifications > 0
+						}
+						return false
+					}(), h.Span(
+						h.Class("flex h-2.5 w-2.5 relative"),
+						h.Span(h.Class("animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75")),
+						h.Span(h.Class("relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500")),
+					)),
+				)),
 				authSection,
 			),
 		),
