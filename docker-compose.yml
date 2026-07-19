@@ -32,7 +32,7 @@ services:
       POSTGRES_PASSWORD: shreelance_password
       POSTGRES_DB: shreelance
     ports:
-      - "5432:5432"
+      - "54321:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
@@ -41,7 +41,7 @@ services:
     image: valkey/valkey:7.2-alpine
     container_name: shreelance-valkey
     ports:
-      - "6379:6379"
+      - "63790:6379"
     restart: unless-stopped
 
 volumes:
