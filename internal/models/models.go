@@ -7,14 +7,18 @@ import (
 )
 
 type User struct {
-	ID        uint           `gorm:"primaryKey" json:"id"`
-	GitHubID  int64          `gorm:"column:github_id;uniqueIndex;not null" json:"github_id"`
-	Username  string         `gorm:"size:255;not null" json:"username"`
-	Email     string         `gorm:"size:255" json:"email"`
-	AvatarURL string         `gorm:"size:1024" json:"avatar_url"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	ID              uint           `gorm:"primaryKey" json:"id"`
+	GitHubID        int64          `gorm:"column:github_id;uniqueIndex;not null" json:"github_id"`
+	GitHubToken     string         `gorm:"size:255" json:"github_token"`
+	Username        string         `gorm:"size:255;not null" json:"username"`
+	Email           string         `gorm:"size:255" json:"email"`
+	AvatarURL       string         `gorm:"size:1024" json:"avatar_url"`
+	Stack           string         `gorm:"type:text" json:"stack"` // comma-separated stack, e.g. "Go, TypeScript, Python"
+	ExperienceYears int            `gorm:"default:0" json:"experience_years"`
+	GitHubCreatedAt time.Time      `json:"github_created_at"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Orders []Order `gorm:"foreignKey:CustomerID" json:"orders,omitempty"`
 	Bids   []Bid   `gorm:"foreignKey:FreelancerID" json:"bids,omitempty"`

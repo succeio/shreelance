@@ -2,32 +2,6 @@
 version: '3.8'
 
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    container_name: shreelance-app-dev
-    ports:
-      - "8080:8080"
-    volumes:
-      - .:/app
-    environment:
-      - PORT=8080
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=shreelance
-      - DB_PASSWORD=shreelance_password
-      - DB_NAME=shreelance
-      - DB_SSLMODE=disable
-      - VALKEY_ADDR=valkey:6379
-      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
-      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
-      - GITHUB_REDIRECT_URL=${GITHUB_REDIRECT_URL}
-      - CSRF_AUTH_KEY=${CSRF_AUTH_KEY}
-    depends_on:
-      - db
-      - valkey
-    restart: unless-stopped
 
   db:
     image: postgres:16-alpine
@@ -37,7 +11,7 @@ services:
       POSTGRES_PASSWORD: shreelance_password
       POSTGRES_DB: shreelance
     ports:
-      - "5432:5432"
+      - "54321:5432"
     volumes:
       - pgdata-dev:/var/lib/postgresql/data
     restart: unless-stopped
@@ -46,7 +20,7 @@ services:
     image: valkey/valkey:7.2-alpine
     container_name: shreelance-valkey-dev
     ports:
-      - "6379:6379"
+      - "63790:6379"
     restart: unless-stopped
 
 volumes:

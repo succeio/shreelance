@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/alexedwards/scs/v2"
@@ -68,6 +69,7 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		Login     string `json:"login"`
 		Email     string `json:"email"`
 		AvatarURL string `json:"avatar_url"`
+		CreatedAt string `json:"created_at"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&gitHubUser); err != nil {
@@ -80,12 +82,23 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
 			user = models.User{
-				GitHubID:  gitHubUser.ID,
-				Username:  gitHubUser.Login,
-				Email:     gitHubUser.Email,
-				AvatarURL: gitHubUser.AvatarURL,
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
+				GitHubID:    gitHubUser.ID,
+				GitHubToken: token.AccessToken,
+				Username:    gitHubUser.Login,
+				Email:       gitHubUser.Email,
+				AvatarURL:   gitHubUser.AvatarURL,
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
+			}
+			if gitHubUser.CreatedAt != "" {
+				if t, err := time.Parse(time.RFC3339, gitHubUser.CreatedAt); err == nil {
+					user.GitHubCreatedAt = t
+					exp := time.Now().Year() - t.Year()
+					if exp < 0 {
+						exp = 0
+					}
+					user.ExperienceYears = exp
+				}
 			}
 			if err := h.DB.Create(&user).Error; err != nil {
 				http.Error(w, "Failed to create user: "+err.Error(), http.StatusInternalServerError)
@@ -95,13 +108,90 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Database error: "+result.Error.Error(), http.StatusInternalServerError)
 			return
 		}
+	} else {
+		// Update token for existing user
+		user.GitHubToken = token.AccessToken
+		h.DB.Save(&user)
 	}
+
+	// Try to sync GitHub data (stack/repos)
+	_ = SyncGitHubData(h.DB, &user, token.AccessToken)
 
 	h.Session.Put(r.Context(), "userID", user.ID)
 	// Default context role is customer
 	h.Session.Put(r.Context(), "role", "customer")
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func SyncGitHubData(db *gorm.DB, user *models.User, tokenString string) error {
+	if tokenString == "" {
+		return nil
+	}
+	req, err := http.NewRequest("GET", "https://api.github.com/user", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+tokenString)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var gitHubUser struct {
+		CreatedAt string `json:"created_at"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&gitHubUser); err != nil {
+		return err
+	}
+
+	if gitHubUser.CreatedAt != "" {
+		if t, err := time.Parse(time.RFC3339, gitHubUser.CreatedAt); err == nil {
+			user.GitHubCreatedAt = t
+			exp := time.Now().Year() - t.Year()
+			if exp < 0 {
+				exp = 0
+			}
+			user.ExperienceYears = exp
+		}
+	}
+
+	// Fetch repos
+	reqRepos, err := http.NewRequest("GET", "https://api.github.com/user/repos?sort=updated&per_page=15", nil)
+	if err != nil {
+		return err
+	}
+	reqRepos.Header.Set("Authorization", "Bearer "+tokenString)
+	respRepos, err := http.DefaultClient.Do(reqRepos)
+	if err != nil {
+		return err
+	}
+	defer respRepos.Body.Close()
+
+	var repos []struct {
+		Language string `json:"language"`
+	}
+	if err := json.NewDecoder(respRepos.Body).Decode(&repos); err == nil {
+		langMap := make(map[string]bool)
+		for _, r := range repos {
+			if r.Language != "" {
+				langMap[strings.ToLower(r.Language)] = true
+			}
+		}
+		var langs []string
+		for lang := range langMap {
+			// Title case or just lowercase, let's title case them to look nice
+			langs = append(langs, strings.Title(lang))
+		}
+		if len(langs) > 0 {
+			user.Stack = strings.Join(langs, ", ")
+		}
+	}
+
+	user.GitHubToken = tokenString
+	user.UpdatedAt = time.Now()
+	return db.Save(user).Error
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {

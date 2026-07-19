@@ -44,13 +44,42 @@ func (h *OrdersHandler) List(w http.ResponseWriter, r *http.Request) {
 	user, role := GetUserFromSession(h.DB, h.Session, r)
 
 	var orders []models.Order
-	// Hide in_progress, completed, cancelled orders from main list unless we are the customer or the hired freelancer
-	query := h.DB.Preload("Customer").Order("created_at desc")
+	query := h.DB.Preload("Customer")
 	if user != nil {
-		// Show open orders OR orders where user is Customer OR orders where user has bids
 		query = query.Where("status = ? OR customer_id = ? OR id IN (SELECT order_id FROM bids WHERE freelancer_id = ?)", "open", user.ID, user.ID)
 	} else {
 		query = query.Where("status = ?", "open")
+	}
+
+	search := r.URL.Query().Get("search")
+	if search != "" {
+		query = query.Where("title ILIKE ? OR description ILIKE ?", "%"+search+"%", "%"+search+"%")
+	}
+
+	minBudgetStr := r.URL.Query().Get("min_budget")
+	if minBudgetStr != "" {
+		if minBudget, err := strconv.ParseFloat(minBudgetStr, 64); err == nil {
+			query = query.Where("budget >= ?", minBudget)
+		}
+	}
+
+	maxBudgetStr := r.URL.Query().Get("max_budget")
+	if maxBudgetStr != "" {
+		if maxBudget, err := strconv.ParseFloat(maxBudgetStr, 64); err == nil {
+			query = query.Where("budget <= ?", maxBudget)
+		}
+	}
+
+	sortBy := r.URL.Query().Get("sort")
+	switch sortBy {
+	case "budget_desc":
+		query = query.Order("budget desc")
+	case "budget_asc":
+		query = query.Order("budget asc")
+	case "created_asc":
+		query = query.Order("created_at asc")
+	default:
+		query = query.Order("created_at desc")
 	}
 
 	if err := query.Find(&orders).Error; err != nil {
@@ -58,7 +87,7 @@ func (h *OrdersHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content := h.renderOrdersList(orders, user, role, csrf.Token(r))
+	content := h.renderOrdersList(orders, user, role, csrf.Token(r), search, minBudgetStr, maxBudgetStr, sortBy)
 	layout := ui.Layout(ui.PageParams{
 		Title:       "Все заказы",
 		Content:     content,
@@ -455,7 +484,7 @@ func (h *OrdersHandler) CreateBid(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/orders/%d", orderID), http.StatusSeeOther)
 }
 
-func (h *OrdersHandler) renderOrdersList(orders []models.Order, user *models.User, role string, csrfToken string) g.Node {
+func (h *OrdersHandler) renderOrdersList(orders []models.Order, user *models.User, role string, csrfToken string, search, minBudget, maxBudget, sort string) g.Node {
 	var createBtn g.Node
 	if user != nil && role == "customer" {
 		createBtn = html.A(
@@ -480,7 +509,7 @@ func (h *OrdersHandler) renderOrdersList(orders []models.Order, user *models.Use
 					g.Text(fmt.Sprintf("%.0f ₽", o.Budget)),
 				),
 			),
-			html.P(html.Class("text-gray-600 mb-4 line-clamp-3"), g.Text(o.Description)),
+			html.P(html.Class("text-gray-600 mb-4 line-clamp-3 text-sm"), g.Text(o.Description)),
 			html.Div(
 				html.Class("flex justify-between items-center text-xs text-gray-400"),
 				html.Span(g.Text("Заказчик: "+o.Customer.Username)),
@@ -491,8 +520,8 @@ func (h *OrdersHandler) renderOrdersList(orders []models.Order, user *models.Use
 
 	if len(orderCards) == 0 {
 		orderCards = append(orderCards, html.Div(
-			html.Class("text-center py-12 text-gray-500"),
-			g.Text("Заказов пока нет."),
+			html.Class("col-span-full text-center py-12 text-gray-500 bg-white rounded-lg border border-gray-100"),
+			g.Text("Заказы не найдены по заданным критериям."),
 		))
 	}
 
@@ -504,8 +533,54 @@ func (h *OrdersHandler) renderOrdersList(orders []models.Order, user *models.Use
 			createBtn,
 		),
 		html.Div(
-			html.Class("grid grid-cols-1 md:grid-cols-2 gap-6"),
-			g.Group(orderCards),
+			html.Class("grid grid-cols-1 lg:grid-cols-4 gap-8"),
+			// Sidebar Filters
+			html.Div(
+				html.Class("lg:col-span-1 bg-white p-6 rounded-lg shadow-sm border border-gray-100 self-start"),
+				html.H2(html.Class("text-lg font-bold text-gray-900 mb-4"), g.Text("Фильтры")),
+				html.Form(
+					html.Method("GET"),
+					html.Class("space-y-4"),
+					html.Div(
+						html.Label(html.Class("block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider"), g.Text("Поиск")),
+						html.Input(html.Type("text"), html.Name("search"), html.Value(search), html.Placeholder("Название или описание..."), html.Class("w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500")),
+					),
+					html.Div(
+						html.Label(html.Class("block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider"), g.Text("Минимальный бюджет (₽)")),
+						html.Input(html.Type("number"), html.Name("min_budget"), html.Value(minBudget), html.Class("w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500")),
+					),
+					html.Div(
+						html.Label(html.Class("block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider"), g.Text("Максимальный бюджет (₽)")),
+						html.Input(html.Type("number"), html.Name("max_budget"), html.Value(maxBudget), html.Class("w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500")),
+					),
+					html.Div(
+						html.Label(html.Class("block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider"), g.Text("Сортировка")),
+						html.Select(
+							html.Name("sort"),
+							html.Class("w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500"),
+							html.Option(g.Attr("value", "created_desc"), g.If(sort == "created_desc" || sort == "", g.Attr("selected", "selected")), g.Text("Сначала новые")),
+							html.Option(g.Attr("value", "created_asc"), g.If(sort == "created_asc", g.Attr("selected", "selected")), g.Text("Сначала старые")),
+							html.Option(g.Attr("value", "budget_desc"), g.If(sort == "budget_desc", g.Attr("selected", "selected")), g.Text("Бюджет: по убыванию")),
+							html.Option(g.Attr("value", "budget_asc"), g.If(sort == "budget_asc", g.Attr("selected", "selected")), g.Text("Бюджет: по возрастанию")),
+						),
+					),
+					html.Button(
+						html.Type("submit"),
+						html.Class("w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded text-sm transition-colors"),
+						g.Text("Применить"),
+					),
+					html.A(
+						html.Href("/orders"),
+						html.Class("block text-center text-xs text-gray-500 hover:text-indigo-600 mt-2"),
+						g.Text("Сбросить все"),
+					),
+				),
+			),
+			// Orders Cards List
+			html.Div(
+				html.Class("lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6"),
+				g.Group(orderCards),
+			),
 		),
 	)
 }

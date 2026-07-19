@@ -56,6 +56,8 @@ func NewRouter(cfg *config.Config, db *gorm.DB, session *scs.SessionManager) htt
 	// Profile Routes
 	r.Get("/profile", profileHandler.Show)
 	r.Post("/profile/role", profileHandler.SwitchRole)
+	r.Post("/profile/update", profileHandler.Update)
+	r.Post("/profile/sync", profileHandler.SyncGitHub)
 
 	// Orders Routes
 	r.Get("/orders", ordersHandler.List)
