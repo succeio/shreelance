@@ -50,7 +50,7 @@ func renderOrderCard(o models.Order) g.Node {
 		html.Div(
 			html.Class("flex justify-between items-center text-xs text-app-text-muted dark:text-app-text-muted-dark border-t border-panel-border dark:border-panel-border-dark pt-3"),
 			html.Span(g.Text("Заказчик: "+o.Customer.Username)),
-			html.Span(g.Text(o.CreatedAt.Format("02.01.2006 15:04"))),
+			html.Span(html.Title(o.CreatedAt.Format("02.01.2006 15:04")), g.Text(FormatRelativeTime(o.CreatedAt))),
 		),
 	)
 }
@@ -455,7 +455,7 @@ func OrderDetail(order models.Order, user *models.User, role string, csrfToken s
 				html.Class("flex justify-between items-start mb-2"),
 				html.Div(
 					html.P(html.Class("font-bold text-app-text dark:text-headline-dark"), g.Text(b.Freelancer.Username)),
-					html.P(html.Class("text-xs text-app-text-muted dark:text-app-text-muted-dark"), g.Text(b.CreatedAt.Format("02.01.2006 15:04"))),
+					html.P(html.Class("text-xs text-app-text-muted dark:text-app-text-muted-dark"), html.Title(b.CreatedAt.Format("02.01.2006 15:04")), g.Text(FormatRelativeTime(b.CreatedAt))),
 				),
 				html.Div(
 					html.Class("flex items-center space-x-3"),
@@ -629,7 +629,7 @@ func OrderDetail(order models.Order, user *models.User, role string, csrfToken s
 			html.Div(
 				html.Class("flex justify-between items-center text-xs text-app-text-muted dark:text-app-text-muted-dark border-t border-panel-border dark:border-panel-border-dark pt-4"),
 				html.Span(g.Text("Заказчик: "+order.Customer.Username)),
-				html.Span(g.Text("Дата публикации: "+order.CreatedAt.Format("02.01.2006 15:04"))),
+				html.Span(html.Title(order.CreatedAt.Format("02.01.2006 15:04")), g.Text("Дата публикации: "+FormatRelativeTime(order.CreatedAt))),
 			),
 			actionButtons,
 		),
