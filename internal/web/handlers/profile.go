@@ -120,6 +120,9 @@ func (h *ProfileHandler) SyncGitHub(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to sync with GitHub: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+	} else if user.GitHubID != nil {
+		// Fallback to public GitHub API sync if token is missing
+		_ = SyncGitHubDataPublic(h.DB, user)
 	}
 
 	if user.GitLabToken != "" {
@@ -127,6 +130,9 @@ func (h *ProfileHandler) SyncGitHub(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to sync with GitLab: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+	} else if user.GitLabID != nil {
+		// Fallback to public GitLab API sync if token is missing
+		_ = SyncGitLabDataPublic(h.DB, user)
 	}
 
 	http.Redirect(w, r, "/profile", http.StatusSeeOther)

@@ -34,18 +34,6 @@ func ProfilePage(u *models.User, role string, csrfToken string, errorMsg string)
 						g.Text("Синхронизировать"),
 					),
 				),
-			g.If(u.GitLabID == nil, html.Div(
-				html.Class("bg-app-bg dark:bg-app-bg-dark p-4 rounded-2xl border border-panel-border dark:border-panel-border-dark flex items-center justify-between"),
-				html.Div(
-					html.P(html.Class("text-sm font-semibold text-app-text dark:text-headline-dark"), g.Text("Привязать аккаунт GitLab")),
-					html.P(html.Class("text-xs text-app-text-muted dark:text-app-text-muted-dark"), g.Text("Синхронизируйте ваши публичные проекты с GitLab.")),
-				),
-				html.A(
-					html.Href("/auth/gitlab"),
-					html.Class("bg-orange-500 hover:bg-orange-600 text-white font-medium text-xs py-2 px-4 rounded transition-colors"),
-					g.Text("Подключить GitLab"),
-				),
-			)),
 			),
 
 			// Edit Profile Form

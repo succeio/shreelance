@@ -42,7 +42,7 @@ func NewAuthHandler(db *gorm.DB, session *scs.SessionManager, cfg *config.Config
 			ClientID:     cfg.GitLabClientID,
 			ClientSecret: cfg.GitLabClientSecret,
 			RedirectURL:  cfg.GitLabRedirectURL,
-			Scopes:       []string{"read_user", "read_repository"},
+			Scopes:       []string{"read_user", "api"},
 			Endpoint:     gitlab.Endpoint,
 		},
 	}
@@ -349,48 +349,104 @@ func (h *AuthHandler) GitLabCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func SyncGitLabData(db *gorm.DB, user *models.User, tokenString string) error {
-	if tokenString == "" {
-		return nil
-	}
-
-	// Try using user-specific projects URL first, fall back to membership/owned projects API
-	reqURL := fmt.Sprintf("https://gitlab.com/api/v4/users/%d/projects?visibility=public&order_by=updated_at&per_page=50", *user.GitLabID)
-	if user.GitLabID == nil {
-		reqURL = "https://gitlab.com/api/v4/projects?membership=true&visibility=public&order_by=updated_at&per_page=50"
-	}
-	req, err := http.NewRequest("GET", reqURL, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+tokenString)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// If we get an error or empty from users projects (some GitLab configurations hide user profiles), fallback to membership
 	var projects []struct {
-		ID         int64  `json:"id"`
-		Visibility string `json:"visibility"`
+		ID int64 `json:"id"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&projects); err != nil || len(projects) == 0 {
-		fallbackURL := "https://gitlab.com/api/v4/projects?membership=true&visibility=public&order_by=updated_at&per_page=50"
-		reqFB, err := http.NewRequest("GET", fallbackURL, nil)
+	// Helper for HTTP GET with optional auth token
+	doGet := func(reqURL string, token string) (*http.Response, error) {
+		req, err := http.NewRequest("GET", reqURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		return http.DefaultClient.Do(req)
+	}
+
+	// 1. Authenticated member projects call if token is present
+	if tokenString != "" {
+		reqURL := "https://gitlab.com/api/v4/projects?membership=true&order_by=updated_at&per_page=50"
+		resp, err := doGet(reqURL, tokenString)
 		if err == nil {
-			reqFB.Header.Set("Authorization", "Bearer "+tokenString)
-			respFB, err := http.DefaultClient.Do(reqFB)
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				_ = json.NewDecoder(resp.Body).Decode(&projects)
+			} else {
+				fmt.Printf("GitLab Sync: membership projects returned status code %d (token length: %d)\n", resp.StatusCode, len(tokenString))
+			}
+		} else {
+			fmt.Printf("GitLab Sync: membership projects request failed: %v\n", err)
+		}
+	}
+
+	// 2. Fallback to user projects endpoint by GitLabID or username
+	if len(projects) == 0 {
+		glUsername := user.GitLabUsername
+		if glUsername == "" {
+			glUsername = user.Username
+		}
+
+		var gitlabUserID int64
+		if user.GitLabID != nil {
+			gitlabUserID = *user.GitLabID
+		}
+
+		if gitlabUserID == 0 && glUsername != "" {
+			// Resolve username to ID first
+			userURL := fmt.Sprintf("https://gitlab.com/api/v4/users?username=%s", glUsername)
+			resp, err := doGet(userURL, tokenString)
+			if err != nil || resp.StatusCode != http.StatusOK {
+				// Retry unauthenticated if authenticated call fails
+				if resp != nil {
+					resp.Body.Close()
+				}
+				resp, err = doGet(userURL, "")
+			}
 			if err == nil {
-				defer respFB.Body.Close()
-				var fbProjects []struct {
-					ID         int64  `json:"id"`
-					Visibility string `json:"visibility"`
+				defer resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					var usersRes []struct {
+						ID int64 `json:"id"`
+					}
+					if err := json.NewDecoder(resp.Body).Decode(&usersRes); err == nil && len(usersRes) > 0 {
+						gitlabUserID = usersRes[0].ID
+					}
+				} else {
+					fmt.Printf("GitLab Sync: resolve username %s returned status %d\n", glUsername, resp.StatusCode)
 				}
-				if json.NewDecoder(respFB.Body).Decode(&fbProjects) == nil {
-					projects = fbProjects
+			}
+		}
+
+		var reqURL string
+		if gitlabUserID != 0 {
+			reqURL = fmt.Sprintf("https://gitlab.com/api/v4/users/%d/projects?order_by=updated_at&per_page=50", gitlabUserID)
+		} else if glUsername != "" {
+			reqURL = fmt.Sprintf("https://gitlab.com/api/v4/users/%s/projects?order_by=updated_at&per_page=50", glUsername)
+		}
+
+		if reqURL != "" {
+			// Try with token first
+			resp, err := doGet(reqURL, tokenString)
+			if err != nil || (resp != nil && resp.StatusCode != http.StatusOK) {
+				if resp != nil {
+					fmt.Printf("GitLab Sync: projects with token returned status %d for url %s\n", resp.StatusCode, reqURL)
+					resp.Body.Close()
 				}
+				// Retry unauthenticated
+				resp, err = doGet(reqURL, "")
+			}
+
+			if err == nil {
+				defer resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					_ = json.NewDecoder(resp.Body).Decode(&projects)
+				} else {
+					fmt.Printf("GitLab Sync: public projects returned status code %d for url %s\n", resp.StatusCode, reqURL)
+				}
+			} else {
+				fmt.Printf("GitLab Sync: public projects request failed: %v\n", err)
 			}
 		}
 	}
@@ -407,32 +463,162 @@ func SyncGitLabData(db *gorm.DB, user *models.User, tokenString string) error {
 		}
 	}
 
-	// For the top 10 public projects, fetch their programming languages
+	// For the top 15 projects, fetch their programming languages
 	limit := len(projects)
-	if limit > 10 {
-		limit = 10
+	if limit > 15 {
+		limit = 15
 	}
 	for i := 0; i < limit; i++ {
 		p := projects[i]
-		if p.Visibility == "public" {
-			langURL := fmt.Sprintf("https://gitlab.com/api/v4/projects/%d/languages", p.ID)
-			lReq, err := http.NewRequest("GET", langURL, nil)
-			if err != nil {
-				continue
+		langURL := fmt.Sprintf("https://gitlab.com/api/v4/projects/%d/languages", p.ID)
+		
+		lResp, err := doGet(langURL, tokenString)
+		if err != nil || (lResp != nil && lResp.StatusCode != http.StatusOK) {
+			if lResp != nil {
+				lResp.Body.Close()
 			}
-			lReq.Header.Set("Authorization", "Bearer "+tokenString)
-			lResp, err := http.DefaultClient.Do(lReq)
-			if err != nil {
-				continue
-			}
+			// Retry unauthenticated
+			lResp, err = doGet(langURL, "")
+		}
+
+		if err != nil {
+			continue
+		}
+		defer lResp.Body.Close()
+		if lResp.StatusCode == http.StatusOK {
 			var projLangs map[string]float64
 			if json.NewDecoder(lResp.Body).Decode(&projLangs) == nil {
 				for lang := range projLangs {
 					langMap[strings.ToLower(lang)] = true
 				}
 			}
-			lResp.Body.Close()
+		} else {
+			fmt.Printf("GitLab Sync: languages returned status code %d for project %d\n", lResp.StatusCode, p.ID)
 		}
+	}
+
+	var langs []string
+	for lang := range langMap {
+		langs = append(langs, strings.Title(lang))
+	}
+	if len(langs) > 0 {
+		user.Stack = strings.Join(langs, ", ")
+	}
+
+	user.UpdatedAt = time.Now()
+	return db.Save(user).Error
+}
+
+func SyncGitHubDataPublic(db *gorm.DB, user *models.User) error {
+	if user.Username == "" {
+		return nil
+	}
+	reqRepos, err := http.NewRequest("GET", fmt.Sprintf("https://api.github.com/users/%s/repos?sort=updated&per_page=15", user.Username), nil)
+	if err != nil {
+		return err
+	}
+	respRepos, err := http.DefaultClient.Do(reqRepos)
+	if err != nil {
+		return err
+	}
+	defer respRepos.Body.Close()
+
+	var repos []struct {
+		Language string `json:"language"`
+	}
+	if err := json.NewDecoder(respRepos.Body).Decode(&repos); err == nil {
+		langMap := make(map[string]bool)
+		if user.Stack != "" {
+			for _, s := range strings.Split(user.Stack, ",") {
+				t := strings.TrimSpace(s)
+				if t != "" {
+					langMap[strings.ToLower(t)] = true
+				}
+			}
+		}
+		for _, r := range repos {
+			if r.Language != "" {
+				langMap[strings.ToLower(r.Language)] = true
+			}
+		}
+		var langs []string
+		for lang := range langMap {
+			langs = append(langs, strings.Title(lang))
+		}
+		if len(langs) > 0 {
+			user.Stack = strings.Join(langs, ", ")
+		}
+	}
+	user.UpdatedAt = time.Now()
+	return db.Save(user).Error
+}
+
+func SyncGitLabDataPublic(db *gorm.DB, user *models.User) error {
+	glUsername := user.GitLabUsername
+	if glUsername == "" {
+		glUsername = user.Username
+	}
+	if glUsername == "" && user.GitLabID == nil {
+		return nil
+	}
+
+	var reqURL string
+	if user.GitLabID != nil {
+		reqURL = fmt.Sprintf("https://gitlab.com/api/v4/users/%d/projects?order_by=updated_at&per_page=50", *user.GitLabID)
+	} else {
+		reqURL = fmt.Sprintf("https://gitlab.com/api/v4/users/%s/projects?order_by=updated_at&per_page=50", glUsername)
+	}
+
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var projects []struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&projects); err != nil {
+		return err
+	}
+
+	langMap := make(map[string]bool)
+	if user.Stack != "" {
+		for _, s := range strings.Split(user.Stack, ",") {
+			t := strings.TrimSpace(s)
+			if t != "" {
+				langMap[strings.ToLower(t)] = true
+			}
+		}
+	}
+
+	limit := len(projects)
+	if limit > 15 {
+		limit = 15
+	}
+	for i := 0; i < limit; i++ {
+		p := projects[i]
+		langURL := fmt.Sprintf("https://gitlab.com/api/v4/projects/%d/languages", p.ID)
+		lReq, err := http.NewRequest("GET", langURL, nil)
+		if err != nil {
+			continue
+		}
+		lResp, err := http.DefaultClient.Do(lReq)
+		if err != nil {
+			continue
+		}
+		var projLangs map[string]float64
+		if json.NewDecoder(lResp.Body).Decode(&projLangs) == nil {
+			for lang := range projLangs {
+				langMap[strings.ToLower(lang)] = true
+			}
+		}
+		lResp.Body.Close()
 	}
 
 	var langs []string
