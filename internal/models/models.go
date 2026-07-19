@@ -73,3 +73,12 @@ type Bid struct {
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
 }
+
+type ProcessedDonation struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	DonationID int64     `gorm:"uniqueIndex;not null" json:"donation_id"`
+	UserID     uint      `gorm:"not null" json:"user_id"`
+	Amount     float64   `gorm:"type:decimal(10,2);not null" json:"amount"`
+	DaysAdded  int       `json:"days_added"`
+	CreatedAt  time.Time `json:"created_at"`
+}

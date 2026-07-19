@@ -26,6 +26,9 @@ type Config struct {
 	CSRFAuthKey        string
 	RewardGitHubRepo   string
 	RewardGitLabRepo   string
+	DonationAlertsAppID       string
+	DonationAlertsAPIKey      string
+	DonationAlertsRedirectURL string
 }
 
 func LoadConfig() *Config {
@@ -52,6 +55,9 @@ func LoadConfig() *Config {
 		CSRFAuthKey:        getEnv("CSRF_AUTH_KEY", "32-byte-long-csrf-auth-key-default-32"),
 		RewardGitHubRepo:   getEnv("REWARD_GITHUB_REPO", "succeio/shreelance"),
 		RewardGitLabRepo:   getEnv("REWARD_GITLAB_REPO", "blackteka/hikkasay"),
+		DonationAlertsAppID:       getEnv("DONATIONALERTS_APP_ID", ""),
+		DonationAlertsAPIKey:      getEnv("DONATIONALERTS_API_KEY", ""),
+		DonationAlertsRedirectURL: getEnv("DONATIONALERTS_REDIRECT_URL", ""),
 	}
 }
 
