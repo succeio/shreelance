@@ -1,3 +1,39 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+[x-cloak] {
+  display: none !important;
+}
+
+@theme {
+  /* Дизайн-система в стиле Shadcn UI (Чистый белый / чистый черный фон, стильные скругления и границы) */
+  --color-app-bg: #ffffff;
+  --color-app-bg-dark: #09090b; /* Zinc 950 */
+  
+  --color-app-text: #09090b; /* Zinc 950 */
+  --color-app-text-dark: #fafafa; /* Zinc 50 */
+
+  --color-app-text-muted: #71717a; /* Zinc 500 */
+  --color-app-text-muted-dark: #a1a1aa; /* Zinc 400 */
+
+  --color-panel-bg: #ffffff;
+  --color-panel-bg-dark: #09090b;
+
+  --color-panel-border: #e4e4e7; /* Zinc 200 */
+  --color-panel-border-dark: #27272a; /* Zinc 800 */
+
+  --color-brand-primary: #18181b; /* Zinc 900 */
+  --color-brand-primary-dark: #fafafa; /* Zinc 50 */
+
+  /* Дополнительные цвета */
+  --color-brand-secondary-dark: #27272a;
+  --color-brand-tertiary-dark: #3f3f46;
+  --color-headline-dark: #fafafa;
+  --color-btn-text-dark: #09090b;
+  
+  /* Переопределение скруглений для более мягкого вида как в shadcn */
+  --radius-lg: 0.75rem; /* 12px */
+  --radius-xl: 1rem;    /* 16px */
+  --radius-2xl: 1.5rem; /* 24px */
+}

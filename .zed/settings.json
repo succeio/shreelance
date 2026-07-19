@@ -1,0 +1,17 @@
+{
+  "lsp": {
+    "tailwindcss-language-server": {
+      "settings": {
+        "experimental": {
+          "classRegex": [
+            "Class\\(\"([^\"]*)\"\\)",
+            "Class\\([^,]+,\\s*\"([^\"]*)\"\\)"
+          ]
+        },
+        "includeLanguages": {
+          "go": "html"
+        }
+      }
+    }
+  }
+}

@@ -1,16 +1,13 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/gorilla/csrf"
 	"gorm.io/gorm"
 	g "maragu.dev/gomponents"
-	html "maragu.dev/gomponents/html"
 
 	"shreelance/internal/models"
 	"shreelance/internal/ui"
@@ -70,7 +67,7 @@ func (h *HomeHandler) Show(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to load specialists", http.StatusInternalServerError)
 			return
 		}
-		content = h.renderSpecialistsDashboard(specialists, search, tech, minExpStr, sortBy)
+		content = ui.SpecialistsDashboard(specialists, search, tech, minExpStr, sortBy)
 	} else {
 		// Freelancer (Specialist) view or Guest: List of Tasks/Orders
 		var orders []models.Order
@@ -117,7 +114,7 @@ func (h *HomeHandler) Show(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to load orders", http.StatusInternalServerError)
 			return
 		}
-		content = h.renderOrdersDashboard(orders, search, minBudgetStr, maxBudgetStr, sortBy, user != nil)
+		content = ui.OrdersDashboard(orders, search, minBudgetStr, maxBudgetStr, sortBy, user != nil)
 	}
 
 	layout := ui.Layout(ui.PageParams{
@@ -126,247 +123,9 @@ func (h *HomeHandler) Show(w http.ResponseWriter, r *http.Request) {
 		User:        user,
 		CSRFToken:   csrf.Token(r),
 		ContextRole: role,
+		Theme:       GetThemeFromCookie(r),
 	})
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = layout.Render(w)
-}
-
-func (h *HomeHandler) renderSpecialistsDashboard(specialists []models.User, search, tech, minExp, sort string) g.Node {
-	var specCards []g.Node
-	for _, s := range specialists {
-		specCards = append(specCards, html.Div(
-			html.Class("bg-white p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex flex-col justify-between space-y-4"),
-			html.Div(
-				html.Class("flex items-start space-x-4"),
-				html.Img(html.Src(s.AvatarURL), html.Alt(s.Username), html.Class("w-14 h-14 rounded-full border border-gray-100")),
-				html.Div(
-					html.Class("flex-grow"),
-					html.H3(html.Class("text-lg font-bold text-gray-900"), g.Text(s.Username)),
-					html.P(html.Class("text-xs text-gray-500 mb-2"), g.Text(fmt.Sprintf("Опыт работы: %d %s", s.ExperienceYears, pluralizeYears(s.ExperienceYears)))),
-				g.If(s.Stack != "", html.Div(
-					html.Class("flex flex-wrap gap-1 mt-1"),
-					g.Group(func() []g.Node {
-						var tags []g.Node
-						for _, t := range strings.Split(s.Stack, ",") {
-							trimmed := strings.TrimSpace(t)
-							if trimmed != "" {
-								tags = append(tags, renderTechBadge(trimmed))
-							}
-						}
-						return tags
-					}()),
-				)),
-				),
-			),
-			html.Div(
-				html.Class("border-t border-gray-100 pt-3 overflow-hidden"),
-				html.Img(
-					html.Src("https://ghchart.rshah.org/4f46e5/"+s.Username),
-					html.Alt(s.Username+"'s GitHub Contributions Chart"),
-					html.Class("w-full h-auto min-h-[45px] object-cover rounded"),
-				),
-			),
-		))
-	}
-
-	if len(specCards) == 0 {
-		specCards = append(specCards, html.Div(
-			html.Class("col-span-full text-center py-12 text-gray-500 bg-white rounded-lg border border-gray-100"),
-			g.Text("Специалисты не найдены по заданным критериям."),
-		))
-	}
-
-	return html.Div(
-		html.Class("grid grid-cols-1 lg:grid-cols-4 gap-8"),
-		// Sidebar Filters
-		html.Div(
-			html.Class("lg:col-span-1 bg-white p-6 rounded-lg shadow-sm border border-gray-100 self-start"),
-			html.H2(html.Class("text-lg font-bold text-gray-900 mb-4"), g.Text("Фильтры")),
-			html.Form(
-				html.Method("GET"),
-				html.Class("space-y-4"),
-				html.Div(
-					html.Label(html.Class("block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider"), g.Text("Поиск")),
-					html.Input(html.Type("text"), html.Name("search"), html.Value(search), html.Placeholder("Имя или навык..."), html.Class("w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500")),
-				),
-				html.Div(
-					html.Label(html.Class("block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider"), g.Text("Конкретная технология")),
-					html.Input(html.Type("text"), html.Name("tech"), html.Value(tech), html.Placeholder("Например: Go"), html.Class("w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500")),
-				),
-				html.Div(
-					html.Label(html.Class("block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider"), g.Text("Минимальный опыт (лет)")),
-					html.Input(html.Type("number"), html.Name("min_exp"), html.Value(minExp), html.Min("0"), html.Class("w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500")),
-				),
-				html.Div(
-					html.Label(html.Class("block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider"), g.Text("Сортировка")),
-					html.Select(
-						html.Name("sort"),
-						html.Class("w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500"),
-						html.Option(g.Attr("value", "username_asc"), g.If(sort == "username_asc" || sort == "", g.Attr("selected", "selected")), g.Text("По имени (А-Я)")),
-						html.Option(g.Attr("value", "username_desc"), g.If(sort == "username_desc", g.Attr("selected", "selected")), g.Text("По имени (Я-А)")),
-						html.Option(g.Attr("value", "exp_desc"), g.If(sort == "exp_desc", g.Attr("selected", "selected")), g.Text("По убыванию опыта")),
-						html.Option(g.Attr("value", "exp_asc"), g.If(sort == "exp_asc", g.Attr("selected", "selected")), g.Text("По возрастанию опыта")),
-					),
-				),
-				html.Button(
-					html.Type("submit"),
-					html.Class("w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded text-sm transition-colors"),
-					g.Text("Применить"),
-				),
-				html.A(
-					html.Href("/"),
-					html.Class("block text-center text-xs text-gray-500 hover:text-indigo-600 mt-2"),
-					g.Text("Сбросить все"),
-				),
-			),
-		),
-		// Specialists Grid
-		html.Div(
-			html.Class("lg:col-span-3 space-y-6"),
-			html.H1(html.Class("text-3xl font-extrabold text-gray-900"), g.Text("Наши специалисты")),
-			html.Div(
-				html.Class("grid grid-cols-1 md:grid-cols-2 gap-6"),
-				g.Group(specCards),
-			),
-		),
-	)
-}
-
-func (h *HomeHandler) renderOrdersDashboard(orders []models.Order, search, minBudget, maxBudget, sort string, isLoggedIn bool) g.Node {
-	var orderCards []g.Node
-	for _, o := range orders {
-		orderCards = append(orderCards, html.Div(
-			html.Class("bg-white p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex flex-col justify-between space-y-3"),
-			html.Div(
-				html.Div(
-					html.Class("flex justify-between items-start mb-2"),
-					html.H3(
-						html.Class("text-xl font-bold text-gray-900 line-clamp-1"),
-						html.A(html.Href(fmt.Sprintf("/orders/%d", o.ID)), html.Class("hover:text-indigo-600"), g.Text(o.Title)),
-					),
-					html.Span(
-						html.Class("text-lg font-extrabold text-green-600 ml-2 whitespace-nowrap"),
-						g.Text(fmt.Sprintf("%.0f ₽", o.Budget)),
-					),
-				),
-				g.If(o.Category != "", html.Div(
-					html.Class("mb-3"),
-					html.Span(
-						html.Class("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-100"),
-						g.Text(o.Category),
-					),
-				)),
-				html.P(html.Class("text-gray-600 mb-3 line-clamp-3 text-sm leading-relaxed"), g.Text(o.Description)),
-				g.If(o.RequiredTech != "", html.Div(
-					html.Class("flex flex-wrap gap-1 mb-2"),
-					g.Group(func() []g.Node {
-						var tags []g.Node
-						for _, t := range strings.Split(o.RequiredTech, ",") {
-							trimmed := strings.TrimSpace(t)
-							if trimmed != "" {
-								tags = append(tags, renderTechBadge(trimmed))
-							}
-						}
-						return tags
-					}()),
-				)),
-			),
-			html.Div(
-				html.Class("flex justify-between items-center text-xs text-gray-400 border-t border-gray-100 pt-3"),
-				html.Span(g.Text("Заказчик: "+o.Customer.Username)),
-				html.Span(g.Text(o.CreatedAt.Format("02.01.2006 15:04"))),
-			),
-		))
-	}
-
-	if len(orderCards) == 0 {
-		orderCards = append(orderCards, html.Div(
-			html.Class("col-span-full text-center py-12 text-gray-500 bg-white rounded-lg border border-gray-100"),
-			g.Text("Заказы не найдены по заданным критериям."),
-		))
-	}
-
-	var headerSection g.Node
-	if !isLoggedIn {
-		headerSection = html.Div(
-			html.Class("text-center py-10 bg-gradient-to-tr from-indigo-50 to-white rounded-2xl shadow-sm border border-indigo-50 px-4 mb-8"),
-			html.H1(html.Class("text-4xl font-extrabold text-gray-900 tracking-tight mb-4"), g.Text("Биржа фриланса нового поколения")),
-			html.P(html.Class("text-base text-gray-600 max-w-2xl mx-auto mb-6 leading-relaxed"), g.Text("Один аккаунт для заказа задач и для их исполнения. Авторизуйтесь через GitHub, чтобы начать работу.")),
-			html.A(
-				html.Href("/auth/github"),
-				html.Class("inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2.5 rounded-lg shadow-md hover:shadow-indigo-200 transition-all"),
-				g.Text("Войти через GitHub"),
-			),
-		)
-	}
-
-	return html.Div(
-		html.Class("space-y-6"),
-		headerSection,
-		html.Div(
-			html.Class("grid grid-cols-1 lg:grid-cols-4 gap-8"),
-			// Sidebar Filters
-			html.Div(
-				html.Class("lg:col-span-1 bg-white p-6 rounded-lg shadow-sm border border-gray-100 self-start"),
-				html.H2(html.Class("text-lg font-bold text-gray-900 mb-4"), g.Text("Фильтры")),
-				html.Form(
-					html.Method("GET"),
-					html.Class("space-y-4"),
-					html.Div(
-						html.Label(html.Class("block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider"), g.Text("Поиск")),
-						html.Input(html.Type("text"), html.Name("search"), html.Value(search), html.Placeholder("Название или описание..."), html.Class("w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500")),
-					),
-					html.Div(
-						html.Label(html.Class("block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider"), g.Text("Минимальный бюджет (₽)")),
-						html.Input(html.Type("number"), html.Name("min_budget"), html.Value(minBudget), html.Class("w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500")),
-					),
-					html.Div(
-						html.Label(html.Class("block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider"), g.Text("Максимальный бюджет (₽)")),
-						html.Input(html.Type("number"), html.Name("max_budget"), html.Value(maxBudget), html.Class("w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500")),
-					),
-					html.Div(
-						html.Label(html.Class("block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wider"), g.Text("Сортировка")),
-						html.Select(
-							html.Name("sort"),
-							html.Class("w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500"),
-							html.Option(g.Attr("value", "created_desc"), g.If(sort == "created_desc" || sort == "", g.Attr("selected", "selected")), g.Text("Сначала новые")),
-							html.Option(g.Attr("value", "created_asc"), g.If(sort == "created_asc", g.Attr("selected", "selected")), g.Text("Сначала старые")),
-							html.Option(g.Attr("value", "budget_desc"), g.If(sort == "budget_desc", g.Attr("selected", "selected")), g.Text("Бюджет: по убыванию")),
-							html.Option(g.Attr("value", "budget_asc"), g.If(sort == "budget_asc", g.Attr("selected", "selected")), g.Text("Бюджет: по возрастанию")),
-						),
-					),
-					html.Button(
-						html.Type("submit"),
-						html.Class("w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded text-sm transition-colors"),
-						g.Text("Применить"),
-					),
-					html.A(
-						html.Href("/"),
-						html.Class("block text-center text-xs text-gray-500 hover:text-indigo-600 mt-2"),
-						g.Text("Сбросить все"),
-					),
-				),
-			),
-			// Orders List
-			html.Div(
-				html.Class("lg:col-span-3 space-y-6"),
-				html.H1(html.Class("text-3xl font-extrabold text-gray-900"), g.Text("Доступные заказы")),
-				html.Div(
-					html.Class("grid grid-cols-1 md:grid-cols-2 gap-6"),
-					g.Group(orderCards),
-				),
-			),
-		),
-	)
-}
-
-func pluralizeYears(years int) string {
-	if years%10 == 1 && years%100 != 11 {
-		return "год"
-	}
-	if (years%10 >= 2 && years%10 <= 4) && (years%100 < 12 || years%100 > 14) {
-		return "года"
-	}
-	return "лет"
 }

@@ -232,3 +232,13 @@ func GetUserFromSession(db *gorm.DB, session *scs.SessionManager, r *http.Reques
 
 	return &user, role
 }
+
+// GetThemeFromCookie helper
+func GetThemeFromCookie(r *http.Request) string {
+	if cookie, err := r.Cookie("theme"); err == nil {
+		if cookie.Value == "light" || cookie.Value == "dark" || cookie.Value == "system" {
+			return cookie.Value
+		}
+	}
+	return "system"
+}
