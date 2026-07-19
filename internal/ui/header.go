@@ -142,12 +142,17 @@ func Navbar(p PageParams) g.Node {
 		)
 	} else {
 		authSection = h.Div(
-			h.Class("flex items-center space-x-4"),
+			h.Class("flex items-center space-x-3"),
 			themeSelector,
 			h.A(
-				h.Href("/auth/github"),
-				h.Class("bg-brand-primary dark:bg-brand-primary-dark hover:opacity-90 text-white dark:text-btn-text-dark px-4 py-2 rounded-xl text-sm font-medium flex items-center space-x-2"),
-				g.Text("Войти через GitHub"),
+				h.Href("/login"),
+				h.Class("text-sm font-medium text-app-text dark:text-app-text-dark hover:text-brand-primary dark:hover:text-brand-primary-dark px-3 py-2"),
+				g.Text("Войти"),
+			),
+			h.A(
+				h.Href("/register"),
+				h.Class("bg-brand-primary dark:bg-brand-primary-dark hover:opacity-90 text-white dark:text-btn-text-dark px-4 py-2 rounded-xl text-sm font-medium transition-colors"),
+				g.Text("Регистрация"),
 			),
 		)
 	}

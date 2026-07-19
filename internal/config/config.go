@@ -20,6 +20,9 @@ type Config struct {
 	GitHubClientID     string
 	GitHubClientSecret string
 	GitHubRedirectURL  string
+	GitLabClientID     string
+	GitLabClientSecret string
+	GitLabRedirectURL  string
 	CSRFAuthKey        string
 }
 
@@ -41,6 +44,9 @@ func LoadConfig() *Config {
 		GitHubClientID:     getEnv("GITHUB_CLIENT_ID", ""),
 		GitHubClientSecret: getEnv("GITHUB_CLIENT_SECRET", ""),
 		GitHubRedirectURL:  getEnv("GITHUB_REDIRECT_URL", "http://localhost:8080/auth/github/callback"),
+		GitLabClientID:     getEnv("GITLAB_CLIENT_ID", ""),
+		GitLabClientSecret: getEnv("GITLAB_CLIENT_SECRET", ""),
+		GitLabRedirectURL:  getEnv("GITLAB_REDIRECT_URL", "http://localhost:8080/auth/gitlab/callback"),
 		CSRFAuthKey:        getEnv("CSRF_AUTH_KEY", "32-byte-long-csrf-auth-key-default-32"),
 	}
 }

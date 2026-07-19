@@ -30,9 +30,9 @@ func (h *HomeHandler) Show(w http.ResponseWriter, r *http.Request) {
 
 	var content g.Node
 	if user != nil && role == "customer" {
-		// Customer view: List of Specialists
+		// Customer view: List of Specialists (users with github_id > 0 OR gitlab_id > 0 OR stack != '')
 		var specialists []models.User
-		query := h.DB.Model(&models.User{}).Where("stack IS NOT NULL AND stack != ''")
+		query := h.DB.Model(&models.User{}).Where("github_id > 0 OR gitlab_id > 0 OR (stack IS NOT NULL AND stack != '')")
 		
 		search := r.URL.Query().Get("search")
 		if search != "" {

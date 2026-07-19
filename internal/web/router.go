@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"shreelance/internal/config"
+	"shreelance/internal/ui"
 	"shreelance/internal/web/handlers"
 )
 
@@ -48,13 +49,59 @@ func NewRouter(cfg *config.Config, db *gorm.DB, session *scs.SessionManager) htt
 	// Routes
 	r.Get("/", homeHandler.Show)
 
+	// Email Auth Routes
+	r.Get("/register", func(w http.ResponseWriter, r *http.Request) {
+		errorMsg := r.URL.Query().Get("error")
+		user, role := handlers.GetUserFromSession(db, session, r)
+		if user != nil {
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		csrfToken := csrf.Token(r)
+		layout := ui.Layout(ui.PageParams{
+			Title:       "Регистрация",
+			Content:     ui.RegisterPage(csrfToken, errorMsg),
+			User:        nil,
+			CSRFToken:   csrfToken,
+			ContextRole: role,
+			Theme:       handlers.GetThemeFromCookie(r),
+		})
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_ = layout.Render(w)
+	})
+	r.Post("/register", authHandler.RegisterEmail)
+
+	r.Get("/login", func(w http.ResponseWriter, r *http.Request) {
+		errorMsg := r.URL.Query().Get("error")
+		user, role := handlers.GetUserFromSession(db, session, r)
+		if user != nil {
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		csrfToken := csrf.Token(r)
+		layout := ui.Layout(ui.PageParams{
+			Title:       "Вход",
+			Content:     ui.LoginPage(csrfToken, errorMsg),
+			User:        nil,
+			CSRFToken:   csrfToken,
+			ContextRole: role,
+			Theme:       handlers.GetThemeFromCookie(r),
+		})
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_ = layout.Render(w)
+	})
+	r.Post("/login", authHandler.LoginEmail)
+
 	// Auth Routes
 	r.Get("/auth/github", authHandler.Login)
 	r.Get("/auth/github/callback", authHandler.Callback)
+	r.Get("/auth/gitlab", authHandler.GitLabLogin)
+	r.Get("/auth/gitlab/callback", authHandler.GitLabCallback)
 	r.Post("/auth/logout", authHandler.Logout)
 
 	// Profile Routes
 	r.Get("/profile", profileHandler.Show)
+	r.Get("/profile/gitlab-card.svg", profileHandler.GitLabSVGCard)
 	r.Post("/profile/role", profileHandler.SwitchRole)
 	r.Post("/profile/update", profileHandler.Update)
 	r.Post("/profile/sync", profileHandler.SyncGitHub)
