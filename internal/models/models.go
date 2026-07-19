@@ -8,9 +8,9 @@ import (
 
 type User struct {
 	ID              uint           `gorm:"primaryKey" json:"id"`
-	GitHubID        int64          `gorm:"column:github_id;uniqueIndex" json:"github_id"`
+	GitHubID        *int64         `gorm:"column:github_id;uniqueIndex" json:"github_id"`
 	GitHubToken     string         `gorm:"size:255" json:"github_token"`
-	GitLabID        int64          `gorm:"column:gitlab_id;uniqueIndex" json:"gitlab_id"`
+	GitLabID        *int64         `gorm:"column:gitlab_id;uniqueIndex" json:"gitlab_id"`
 	GitLabToken     string         `gorm:"size:255" json:"gitlab_token"`
 	GitLabUsername  string         `gorm:"size:255" json:"gitlab_username"`
 	Username        string         `gorm:"size:255;not null" json:"username"`

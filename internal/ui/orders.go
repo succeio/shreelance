@@ -117,11 +117,19 @@ func OrdersDashboard(orders []models.Order, search, minBudget, maxBudget, sort s
 		headerSection = html.Div(
 			html.Class("text-center py-10 bg-panel-bg dark:bg-panel-bg-dark rounded-2xl shadow-sm border border-panel-border dark:border-panel-border-dark px-4 mb-8"),
 			html.H1(html.Class("text-4xl font-extrabold text-app-text dark:text-headline-dark tracking-tight mb-4"), g.Text("Биржа фриланса нового поколения")),
-			html.P(html.Class("text-base text-app-text-muted dark:text-app-text-muted-dark max-w-2xl mx-auto mb-6 leading-relaxed"), g.Text("Один аккаунт для заказа задач и для их исполнения. Авторизуйтесь через GitHub, чтобы начать работу.")),
-			html.A(
-				html.Href("/auth/github"),
-				html.Class("inline-block bg-brand-primary dark:bg-brand-primary-dark hover:opacity-90 text-white dark:text-btn-text-dark font-semibold px-6 py-2.5 rounded-xl shadow-md transition-all"),
-				g.Text("Войти через GitHub"),
+			html.P(html.Class("text-base text-app-text-muted dark:text-app-text-muted-dark max-w-2xl mx-auto mb-6 leading-relaxed"), g.Text("Один аккаунт для заказа задач и для их исполнения. Авторизуйтесь через GitHub или GitLab, чтобы начать работу.")),
+			html.Div(
+				html.Class("flex justify-center space-x-4"),
+				html.A(
+					html.Href("/auth/github"),
+					html.Class("inline-block bg-brand-primary dark:bg-brand-primary-dark hover:opacity-90 text-white dark:text-btn-text-dark font-semibold px-6 py-2.5 rounded-xl shadow-md transition-all"),
+					g.Text("Войти через GitHub"),
+				),
+				html.A(
+					html.Href("/auth/gitlab"),
+					html.Class("inline-block bg-orange-600 hover:bg-orange-700 text-white font-semibold px-6 py-2.5 rounded-xl shadow-md transition-all"),
+					g.Text("Войти через GitLab"),
+				),
 			),
 		)
 	}

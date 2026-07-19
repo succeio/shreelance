@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -36,7 +37,8 @@ func (h *ProfileHandler) Show(w http.ResponseWriter, r *http.Request) {
 	}
 
 	csrfToken := csrf.Token(r)
-	content := ui.ProfilePage(user, role, csrfToken)
+	errorMsg := r.URL.Query().Get("error")
+	content := ui.ProfilePage(user, role, csrfToken, errorMsg)
 	layout := ui.Layout(ui.PageParams{
 		Title:       "Профиль",
 		Content:     content,
@@ -65,6 +67,12 @@ func (h *ProfileHandler) SwitchRole(w http.ResponseWriter, r *http.Request) {
 	role := r.FormValue("role")
 	if role != "customer" && role != "freelancer" {
 		http.Error(w, "Invalid role", http.StatusBadRequest)
+		return
+	}
+
+	// Email-registered users without OAuth (GitHub/GitLab) cannot switch to freelancer role
+	if role == "freelancer" && user.GitHubID == nil && user.GitLabID == nil {
+		http.Redirect(w, r, "/profile?error="+url.QueryEscape("Роль исполнителя доступна только пользователям, авторизованным через GitHub или GitLab"), http.StatusSeeOther)
 		return
 	}
 
@@ -142,8 +150,8 @@ func (h *ProfileHandler) GitLabSVGCard(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch recent events to build a contribution grid (last 365 days)
 	contributions := make(map[string]int)
-	if user.GitLabToken != "" && user.GitLabID > 0 {
-		eventsURL := fmt.Sprintf("https://gitlab.com/api/v4/users/%d/events?per_page=100", user.GitLabID)
+	if user.GitLabToken != "" && user.GitLabID != nil {
+		eventsURL := fmt.Sprintf("https://gitlab.com/api/v4/users/%d/events?per_page=100", *user.GitLabID)
 		req, err := http.NewRequest("GET", eventsURL, nil)
 		if err == nil {
 			req.Header.Set("Authorization", "Bearer "+user.GitLabToken)

@@ -94,7 +94,7 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
 			user = models.User{
-				GitHubID:    gitHubUser.ID,
+				GitHubID:    &gitHubUser.ID,
 				GitHubToken: token.AccessToken,
 				Username:    gitHubUser.Login,
 				Email:       gitHubUser.Email,
@@ -259,7 +259,7 @@ func (h *AuthHandler) GitLabCallback(w http.ResponseWriter, r *http.Request) {
 	var user models.User
 	if loggedInUser != nil {
 		user = *loggedInUser
-		user.GitLabID = gitLabUser.ID
+		user.GitLabID = &gitLabUser.ID
 		user.GitLabToken = token.AccessToken
 		user.GitLabUsername = gitLabUser.Username
 		if gitLabUser.CreatedAt != "" {
@@ -277,7 +277,7 @@ func (h *AuthHandler) GitLabCallback(w http.ResponseWriter, r *http.Request) {
 					var existingByEmail models.User
 					if err := h.DB.Where("email = ?", gitLabUser.Email).First(&existingByEmail).Error; err == nil {
 						user = existingByEmail
-						user.GitLabID = gitLabUser.ID
+						user.GitLabID = &gitLabUser.ID
 						user.GitLabToken = token.AccessToken
 						user.GitLabUsername = gitLabUser.Username
 						if gitLabUser.CreatedAt != "" {
@@ -288,7 +288,7 @@ func (h *AuthHandler) GitLabCallback(w http.ResponseWriter, r *http.Request) {
 						h.DB.Save(&user)
 					} else {
 						user = models.User{
-							GitLabID:       gitLabUser.ID,
+							GitLabID:       &gitLabUser.ID,
 							GitLabToken:    token.AccessToken,
 							GitLabUsername: gitLabUser.Username,
 							Username:       gitLabUser.Username,
@@ -309,7 +309,7 @@ func (h *AuthHandler) GitLabCallback(w http.ResponseWriter, r *http.Request) {
 					}
 				} else {
 					user = models.User{
-						GitLabID:       gitLabUser.ID,
+						GitLabID:       &gitLabUser.ID,
 						GitLabToken:    token.AccessToken,
 						GitLabUsername: gitLabUser.Username,
 						Username:       gitLabUser.Username,
@@ -353,8 +353,8 @@ func SyncGitLabData(db *gorm.DB, user *models.User, tokenString string) error {
 	}
 
 	// Try using user-specific projects URL first, fall back to membership/owned projects API
-	reqURL := fmt.Sprintf("https://gitlab.com/api/v4/users/%d/projects?visibility=public&order_by=updated_at&per_page=50", user.GitLabID)
-	if user.GitLabID == 0 {
+	reqURL := fmt.Sprintf("https://gitlab.com/api/v4/users/%d/projects?visibility=public&order_by=updated_at&per_page=50", *user.GitLabID)
+	if user.GitLabID == nil {
 		reqURL = "https://gitlab.com/api/v4/projects?membership=true&visibility=public&order_by=updated_at&per_page=50"
 	}
 	req, err := http.NewRequest("GET", reqURL, nil)

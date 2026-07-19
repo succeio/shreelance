@@ -113,13 +113,18 @@ func Navbar(p PageParams) g.Node {
 							h.Input(h.Type("hidden"), h.Name("role"), h.Value("customer")),
 							h.Button(h.Type("submit"), h.Class("block w-full text-left px-4 py-2 text-sm text-app-text dark:text-app-text-dark hover:bg-app-bg dark:hover:bg-zinc-800"), g.Text("Заказчик")),
 						),
-						h.Form(
+						g.If(func() bool {
+							if u, ok := p.User.(*models.User); ok && u != nil {
+								return u.GitHubID != nil || u.GitLabID != nil
+							}
+							return false
+						}(), h.Form(
 							h.Action("/profile/role"),
 							h.Method("POST"),
 							h.Input(h.Type("hidden"), h.Name("csrf_token"), h.Value(p.CSRFToken)),
 							h.Input(h.Type("hidden"), h.Name("role"), h.Value("freelancer")),
 							h.Button(h.Type("submit"), h.Class("block w-full text-left px-4 py-2 text-sm text-app-text dark:text-app-text-dark hover:bg-app-bg dark:hover:bg-zinc-800"), g.Text("Исполнитель")),
-						),
+						)),
 					),
 				),
 			),
