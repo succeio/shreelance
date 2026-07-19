@@ -42,7 +42,7 @@ func NewRouter(cfg *config.Config, db *gorm.DB, session *scs.SessionManager) htt
 
 	// Initialize Handlers
 	authHandler := handlers.NewAuthHandler(db, session, cfg)
-	profileHandler := handlers.NewProfileHandler(db, session)
+	profileHandler := handlers.NewProfileHandler(db, session, cfg)
 	ordersHandler := handlers.NewOrdersHandler(db, session)
 	homeHandler := handlers.NewHomeHandler(db, session)
 
@@ -105,6 +105,7 @@ func NewRouter(cfg *config.Config, db *gorm.DB, session *scs.SessionManager) htt
 	r.Post("/profile/role", profileHandler.SwitchRole)
 	r.Post("/profile/update", profileHandler.Update)
 	r.Post("/profile/sync", profileHandler.SyncGitHub)
+	r.Post("/profile/verify-star", profileHandler.VerifyStar)
 
 	// Orders Routes
 	r.Get("/orders", ordersHandler.List)

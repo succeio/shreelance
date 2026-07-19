@@ -42,7 +42,7 @@ func NewAuthHandler(db *gorm.DB, session *scs.SessionManager, cfg *config.Config
 			ClientID:     cfg.GitLabClientID,
 			ClientSecret: cfg.GitLabClientSecret,
 			RedirectURL:  cfg.GitLabRedirectURL,
-			Scopes:       []string{"read_user", "api"},
+			Scopes:       []string{"read_user", "read_api"},
 			Endpoint:     gitlab.Endpoint,
 		},
 	}

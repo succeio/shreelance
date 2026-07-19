@@ -22,6 +22,11 @@ func SpecialistsDashboard(specialists []models.User, search, tech, minExp, sort 
 					html.Class("flex-grow"),
 					html.H3(html.Class("text-lg font-bold text-app-text dark:text-headline-dark flex items-center space-x-2"),
 						html.Span(g.Text(s.Username)),
+						g.If(s.IsPro(), html.Span(
+							html.Class("bg-gradient-to-r from-amber-500 to-yellow-400 text-white font-extrabold text-[10px] px-2 py-0.5 rounded-full shadow-sm tracking-wide border border-amber-300 dark:border-amber-600"),
+							html.Title("PRO аккаунт активен"),
+							g.Text("PRO"),
+						)),
 						// Render GitHub icon if primary account is GitHub, otherwise GitLab
 						g.If(s.GitHubID != nil, html.A(
 							html.Href("https://github.com/"+s.Username),

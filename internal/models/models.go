@@ -21,6 +21,8 @@ type User struct {
 	ExperienceYears int            `gorm:"default:0" json:"experience_years"`
 	GitHubCreatedAt time.Time      `json:"github_created_at"`
 	GitLabCreatedAt time.Time      `json:"gitlab_created_at"`
+	ProUntil        *time.Time     `json:"pro_until"`
+	HasStarredRepo  bool           `gorm:"default:false" json:"has_starred_repo"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
@@ -30,6 +32,13 @@ type User struct {
 
 	Orders []Order `gorm:"foreignKey:CustomerID" json:"orders,omitempty"`
 	Bids   []Bid   `gorm:"foreignKey:FreelancerID" json:"bids,omitempty"`
+}
+
+func (u *User) IsPro() bool {
+	if u.ProUntil == nil {
+		return false
+	}
+	return u.ProUntil.After(time.Now())
 }
 
 type Order struct {

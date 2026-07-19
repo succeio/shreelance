@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/csrf"
 	"gorm.io/gorm"
 
+	"shreelance/internal/config"
 	"shreelance/internal/models"
 	"shreelance/internal/ui"
 )
@@ -20,12 +21,14 @@ import (
 type ProfileHandler struct {
 	DB      *gorm.DB
 	Session *scs.SessionManager
+	Cfg     *config.Config
 }
 
-func NewProfileHandler(db *gorm.DB, session *scs.SessionManager) *ProfileHandler {
+func NewProfileHandler(db *gorm.DB, session *scs.SessionManager, cfg *config.Config) *ProfileHandler {
 	return &ProfileHandler{
 		DB:      db,
 		Session: session,
+		Cfg:     cfg,
 	}
 }
 
@@ -282,4 +285,121 @@ func (h *ProfileHandler) GitLabSVGCard(w http.ResponseWriter, r *http.Request) {
 		gridSVG.String(),
 	)
 	_, _ = w.Write([]byte(svg))
+}
+
+func (h *ProfileHandler) VerifyStar(w http.ResponseWriter, r *http.Request) {
+	user, _ := GetUserFromSession(h.DB, h.Session, r)
+	if user == nil {
+		http.Redirect(w, r, "/auth/github", http.StatusSeeOther)
+		return
+	}
+
+	if user.HasStarredRepo {
+		http.Redirect(w, r, "/profile", http.StatusSeeOther)
+		return
+	}
+
+	starred := false
+
+	// Check GitHub star if GitHub account connected
+	if user.GitHubID != nil {
+		reqURL := fmt.Sprintf("https://api.github.com/user/starred/%s", h.Cfg.RewardGitHubRepo)
+		req, err := http.NewRequest("GET", reqURL, nil)
+		if err == nil {
+			if user.GitHubToken != "" {
+				req.Header.Set("Authorization", "Bearer "+user.GitHubToken)
+			}
+			req.Header.Set("User-Agent", "ShreelanceApp")
+			resp, err := http.DefaultClient.Do(req)
+			if err == nil {
+				defer resp.Body.Close()
+				fmt.Printf("VerifyStar GitHub: checking %s with token len %d, response status: %d\n", reqURL, len(user.GitHubToken), resp.StatusCode)
+				if resp.StatusCode == http.StatusNoContent {
+					starred = true
+				}
+			} else {
+				fmt.Printf("VerifyStar GitHub: request failed: %v\n", err)
+			}
+		}
+	}
+
+	// Check GitLab star if not starred on GitHub and GitLab username exists
+	if !starred && (user.GitLabID != nil || user.GitLabUsername != "") {
+		glUser := user.GitLabUsername
+		if glUser == "" {
+			glUser = user.Username
+		}
+		reqURL := fmt.Sprintf("https://gitlab.com/api/v4/users/%s/starred_projects", glUser)
+		req, err := http.NewRequest("GET", reqURL, nil)
+		if err == nil {
+			if user.GitLabToken != "" {
+				req.Header.Set("Authorization", "Bearer "+user.GitLabToken)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err == nil {
+				defer resp.Body.Close()
+				fmt.Printf("VerifyStar GitLab: checking %s with token len %d, response status: %d\n", reqURL, len(user.GitLabToken), resp.StatusCode)
+				
+				// Fallback if starred_projects is forbidden (e.g. private starred projects list or scope restrictions)
+				if resp.StatusCode == http.StatusForbidden && user.GitLabToken != "" {
+					escapedProject := strings.ReplaceAll(h.Cfg.RewardGitLabRepo, "/", "%2F")
+					projectURL := fmt.Sprintf("https://gitlab.com/api/v4/projects/%s", escapedProject)
+					pReq, pErr := http.NewRequest("GET", projectURL, nil)
+					if pErr == nil {
+						pReq.Header.Set("Authorization", "Bearer "+user.GitLabToken)
+						pResp, pErr2 := http.DefaultClient.Do(pReq)
+						if pErr2 == nil {
+							defer pResp.Body.Close()
+							fmt.Printf("VerifyStar GitLab fallback: checking project %s status: %d\n", projectURL, pResp.StatusCode)
+							if pResp.StatusCode == http.StatusOK {
+								var pDetails struct {
+									Starred bool `json:"starred"`
+								}
+								if json.NewDecoder(pResp.Body).Decode(&pDetails) == nil {
+									if pDetails.Starred {
+										starred = true
+									}
+								}
+							}
+						}
+					}
+				}
+
+				if resp.StatusCode == http.StatusOK {
+					var starredProjects []struct {
+						PathWithNamespace string `json:"path_with_namespace"`
+					}
+					if json.NewDecoder(resp.Body).Decode(&starredProjects) == nil {
+						target := strings.ToLower(h.Cfg.RewardGitLabRepo)
+						for _, p := range starredProjects {
+							if strings.ToLower(p.PathWithNamespace) == target {
+								starred = true
+								break
+							}
+						}
+					}
+				}
+			} else {
+				fmt.Printf("VerifyStar GitLab: request failed: %v\n", err)
+			}
+		}
+	}
+
+	if starred {
+		user.HasStarredRepo = true
+		now := time.Now()
+		var proBase time.Time
+		if user.ProUntil != nil && user.ProUntil.After(now) {
+			proBase = *user.ProUntil
+		} else {
+			proBase = now
+		}
+		newProUntil := proBase.Add(3 * 24 * time.Hour)
+		user.ProUntil = &newProUntil
+		h.DB.Save(user)
+		http.Redirect(w, r, "/profile?success=pro_granted", http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/profile?error=star_not_found", http.StatusSeeOther)
 }

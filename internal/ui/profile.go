@@ -101,7 +101,55 @@ func ProfilePage(u *models.User, role string, csrfToken string, errorMsg string)
 		
 		g.If(errorMsg != "", html.Div(
 			html.Class("bg-red-100 dark:bg-red-900/40 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 px-4 py-3 rounded-xl mb-4 text-sm"),
-			g.Text(errorMsg),
+			g.Text(func() string {
+				if errorMsg == "star_not_found" {
+					return "Вы не поставили звезду репозиторию. Пожалуйста, поставьте звезду и попробуйте снова!"
+				}
+				return errorMsg
+			}()),
+		)),
+
+		// Add Reward Task Banner
+		g.If(!u.HasStarredRepo, html.Div(
+			html.Class("mb-6 p-5 rounded-2xl bg-gradient-to-r from-purple-500/20 via-pink-500/10 to-indigo-500/20 dark:from-purple-950/40 dark:to-indigo-950/40 border border-purple-500/30 dark:border-purple-500/20 shadow-md animate-pulse-slow"),
+			html.Div(
+				html.Class("flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"),
+				html.Div(
+					html.Class("space-y-1"),
+					html.H3(html.Class("text-base font-bold text-purple-900 dark:text-purple-300 flex items-center space-x-1.5"),
+						g.Raw(`<svg class="w-5 h-5 text-amber-500 animate-bounce" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>`),
+						g.Text("Получи PRO аккаунт бесплатно на 3 дня!"),
+					),
+					html.P(html.Class("text-xs text-purple-750 dark:text-purple-400 leading-relaxed"),
+						g.Text("Поставьте звезду нашему проекту на GitHub или GitLab, а затем нажмите кнопку проверки, чтобы активировать PRO-статус."),
+					),
+					html.Div(
+						html.Class("flex flex-wrap gap-3 mt-2 text-xs font-semibold"),
+						g.If(u.GitHubID != nil, html.A(
+							html.Href("https://github.com/succeio/shreelance"),
+							html.Target("_blank"),
+							html.Class("text-blue-600 dark:text-blue-400 hover:underline flex items-center space-x-1"),
+							g.Text("★ GitHub репозиторий"),
+						)),
+						g.If(u.GitLabID != nil || u.GitLabUsername != "", html.A(
+							html.Href("https://gitlab.com/blackteka/hikkasay"),
+							html.Target("_blank"),
+							html.Class("text-orange-600 dark:text-orange-400 hover:underline flex items-center space-x-1"),
+							g.Text("★ GitLab репозиторий"),
+						)),
+					),
+				),
+				html.Form(
+					html.Action("/profile/verify-star"),
+					html.Method("POST"),
+					html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
+					html.Button(
+						html.Type("submit"),
+						html.Class("w-full sm:w-auto bg-purple-600 dark:bg-purple-700 hover:bg-purple-700 dark:hover:bg-purple-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-lg hover:shadow-purple-500/20 transition-all flex items-center justify-center space-x-1.5"),
+						g.Text("Проверить звезду"),
+					),
+				),
+			),
 		)),
 
 		html.Div(
@@ -110,6 +158,11 @@ func ProfilePage(u *models.User, role string, csrfToken string, errorMsg string)
 			html.Div(
 				html.H1(html.Class("text-3xl font-bold text-app-text dark:text-headline-dark flex items-center space-x-3"),
 					html.Span(g.Text(u.Username)),
+					g.If(u.IsPro(), html.Span(
+						html.Class("bg-gradient-to-r from-amber-500 to-yellow-400 text-white font-extrabold text-xs px-2.5 py-0.5 rounded-full shadow-sm tracking-wide border border-amber-300 dark:border-amber-600"),
+						html.Title("PRO аккаунт активен"),
+						g.Text("PRO"),
+					)),
 					// Render GitHub icon if primary account is GitHub (GitHubID != nil), otherwise render GitLab icon if GitLabID != nil
 					g.If(u.GitHubID != nil, html.A(
 						html.Href("https://github.com/"+u.Username),

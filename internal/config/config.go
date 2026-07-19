@@ -24,6 +24,8 @@ type Config struct {
 	GitLabClientSecret string
 	GitLabRedirectURL  string
 	CSRFAuthKey        string
+	RewardGitHubRepo   string
+	RewardGitLabRepo   string
 }
 
 func LoadConfig() *Config {
@@ -48,6 +50,8 @@ func LoadConfig() *Config {
 		GitLabClientSecret: getEnv("GITLAB_CLIENT_SECRET", ""),
 		GitLabRedirectURL:  getEnv("GITLAB_REDIRECT_URL", "http://localhost:8080/auth/gitlab/callback"),
 		CSRFAuthKey:        getEnv("CSRF_AUTH_KEY", "32-byte-long-csrf-auth-key-default-32"),
+		RewardGitHubRepo:   getEnv("REWARD_GITHUB_REPO", "succeio/shreelance"),
+		RewardGitLabRepo:   getEnv("REWARD_GITLAB_REPO", "blackteka/hikkasay"),
 	}
 }
 
