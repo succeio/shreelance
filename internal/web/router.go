@@ -97,7 +97,6 @@ func NewRouter(cfg *config.Config, db *gorm.DB, session *scs.SessionManager) htt
 	r.Get("/auth/github/callback", authHandler.Callback)
 	r.Get("/auth/gitlab", authHandler.GitLabLogin)
 	r.Get("/auth/gitlab/callback", authHandler.GitLabCallback)
-	r.Get("/donationalerts/callback", authHandler.DonationAlertsCallback)
 	r.Post("/auth/logout", authHandler.Logout)
 
 	// Profile Routes

@@ -16,7 +16,6 @@ import (
 	"shreelance/internal/config"
 	"shreelance/internal/models"
 	"shreelance/internal/web"
-	"shreelance/internal/worker"
 )
 
 func main() {
@@ -33,7 +32,7 @@ func main() {
 	log.Println("Successfully connected to PostgreSQL")
 
 	// Run AutoMigrations
-	err = db.AutoMigrate(&models.User{}, &models.Order{}, &models.Bid{}, &models.ProcessedDonation{})
+	err = db.AutoMigrate(&models.User{}, &models.Order{}, &models.Bid{})
 	if err != nil {
 		log.Fatalf("Database migration failed: %v", err)
 	}
@@ -62,9 +61,6 @@ func main() {
 
 	// 4. Setup Router
 	router := web.NewRouter(cfg, db, sessionManager)
-
-	// Start DonationAlerts Polling Worker
-	worker.StartDonationWorker(db, valkeyClient, cfg)
 
 	// 5. Start Server
 	srvAddr := ":" + cfg.Port

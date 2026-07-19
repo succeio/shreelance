@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -121,9 +120,6 @@ func ProfilePage(u *models.User, role string, csrfToken string, errorMsg string)
 						g.Raw(`<svg class="w-5 h-5 text-amber-500 animate-bounce" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>`),
 						g.Text("Получи PRO аккаунт бесплатно на 3 дня!"),
 					),
-					html.H3(html.Class("text-xs text-purple-750 dark:text-purple-400 font-semibold"),
-						g.Text(fmt.Sprintf("Ваш PRO_ID для доната: PRO_ID_%d", u.ID)),
-					),
 					html.P(html.Class("text-xs text-purple-750 dark:text-purple-400 leading-relaxed"),
 						g.Text("Поставьте звезду нашему проекту на GitHub или GitLab, а затем нажмите кнопку проверки, чтобы активировать PRO-статус."),
 					),
@@ -155,32 +151,6 @@ func ProfilePage(u *models.User, role string, csrfToken string, errorMsg string)
 				),
 			),
 		)),
-
-		// DonationAlerts Section
-		html.Div(
-			html.Class("mb-6 p-5 rounded-2xl bg-gradient-to-r from-orange-500/10 via-yellow-500/5 to-orange-500/10 dark:from-orange-950/20 dark:to-yellow-950/20 border border-orange-500/20 dark:border-orange-500/10 shadow-sm"),
-			html.Div(
-				html.Class("flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"),
-				html.Div(
-					html.Class("space-y-1"),
-					html.H3(html.Class("text-base font-bold text-orange-900 dark:text-orange-300 flex items-center space-x-1.5"),
-						g.Text("Поддержка проекта (Купить PRO)"),
-					),
-					html.P(html.Class("text-xs text-orange-750 dark:text-orange-400 leading-relaxed"),
-						g.Text("Вы можете продлить PRO-статус через пожертвование (100 рублей = 10 дней PRO)."),
-					),
-					html.P(html.Class("text-xs font-semibold text-orange-900 dark:text-orange-300"),
-						g.Text(fmt.Sprintf("Обязательно укажите в сообщении доната: PRO_ID_%d", u.ID)),
-					),
-				),
-				html.A(
-					html.Href(fmt.Sprintf("https://www.donationalerts.com/r/shrelance?amount=100&comment=PRO_ID_%d", u.ID)),
-					html.Target("_blank"),
-					html.Class("w-full sm:w-auto bg-orange-500 hover:bg-orange-650 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md transition-all text-center"),
-					g.Text("Пожертвовать"),
-				),
-			),
-		),
 
 		html.Div(
 			html.Class("flex items-center space-x-6 mb-8"),
